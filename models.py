@@ -10,17 +10,63 @@ class ExchangeRate(Base):
     rate_to_pyg = Column(Float, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+class Category(Base):
+    __tablename__ = 'categories'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    
+class Brand(Base):
+    __tablename__ = 'brands'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+
 class Product(Base):
     __tablename__ = 'products'
     id = Column(Integer, primary_key=True, index=True)
     art_codigo = Column(String(6), unique=True, index=True) 
-    art_descri = Column(String(60), nullable=False) 
-    art_cbarra = Column(String(30)) 
+    art_descri = Column(String(100)) 
+    art_cbarra = Column(String(20)) # Código principal
     art_costo = Column(Float, default=0.0) 
     art_preven = Column(Float, default=0.0) 
     art_codmnd = Column(String(2)) 
     art_impu = Column(Float, default=10.0) 
+    art_stkmin = Column(Integer, default=10)
+    art_stkmax = Column(Integer, default=200)
     art_stkini = Column(Integer, default=0) 
+    
+    # Nuevos campos de Supermercado
+    category_id = Column(Integer, ForeignKey('categories.id'), nullable=True)
+    brand_id = Column(Integer, ForeignKey('brands.id'), nullable=True)
+    uom = Column(String(20), default="Un") # Unidad de medida
+    is_fractional = Column(Boolean, default=False)
+    location = Column(String(100))
+    is_active = Column(Boolean, default=True)
+    
+    category = relationship("Category")
+    brand = relationship("Brand")
+    barcodes = relationship("ProductBarcode", back_populates="product", cascade="all, delete-orphan")
+    batches = relationship("ProductBatch", back_populates="product", cascade="all, delete-orphan")
+
+class ProductBarcode(Base):
+    """Códigos de barra alternativos (Packs, Cajas)"""
+    __tablename__ = 'product_barcodes'
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey('products.id'))
+    barcode = Column(String(50), index=True, unique=True)
+    factor_conversion = Column(Float, default=1.0) # Si es caja de 6, factor=6
+    
+    product = relationship("Product", back_populates="barcodes")
+
+class ProductBatch(Base):
+    """Lotes y Vencimientos"""
+    __tablename__ = 'product_batches'
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey('products.id'))
+    lote = Column(String(50))
+    fecha_vencimiento = Column(DateTime)
+    stock_actual = Column(Float, default=0.0)
+    
+    product = relationship("Product", back_populates="batches")
 
 class Client(Base):
     __tablename__ = 'clients'

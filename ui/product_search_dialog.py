@@ -43,10 +43,11 @@ class ProductSearchDialog(QDialog):
         db = SessionLocal()
         
         products = db.query(models.Product).filter(
-            (models.Product.art_descri.ilike(f"%{query_text}%")) |
+            models.Product.is_active == True,
+            ((models.Product.art_descri.ilike(f"%{query_text}%")) |
             (models.Product.art_codigo.ilike(f"%{query_text}%")) |
-            (models.Product.art_cbarra.ilike(f"%{query_text}%"))
-        ).limit(50).all()
+            (models.Product.art_cbarra.ilike(f"%{query_text}%")))
+        ).limit(100).all()
         
         self.table.setRowCount(0)
         for row, prod in enumerate(products):
