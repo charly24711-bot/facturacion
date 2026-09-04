@@ -1,0 +1,14 @@
+DEL *.FXP
+DEL *.ERR
+DEL *.TMP
+DEL *.BAK
+DEL *.TXT
+DEL 1*.*
+DEL 2*.*
+DEL 3*.*
+DEL 4*.*
+DEL 5*.*
+DEL 6*.*
+DEL 7*.*
+DEL 8*.*
+DEL 9*.*

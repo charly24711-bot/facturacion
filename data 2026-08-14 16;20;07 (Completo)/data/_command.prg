@@ -1,0 +1,1 @@
+USE articuloBROWSEUSE configZAPUSE config EXCLUSIVEZAPBROWSEQUIT

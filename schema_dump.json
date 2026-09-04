@@ -1,0 +1,1545 @@
+{
+  "articulo.dbf": [
+    {
+      "name": "ART_CODIGO",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "ART_DESCRI",
+      "type": "C",
+      "length": 60
+    },
+    {
+      "name": "ART_MARCA",
+      "type": "C",
+      "length": 4
+    },
+    {
+      "name": "ART_CODAGR",
+      "type": "C",
+      "length": 4
+    },
+    {
+      "name": "ART_COSTO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_UPROVE",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "ART_UCOMPR",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "ART_UCLIEN",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "ART_UVENTA",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "ART_UPREVE",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_PROME",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_TIPVEN",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "ART_PREVEN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_PORVEN",
+      "type": "N",
+      "length": 6
+    },
+    {
+      "name": "ART_CBARRA",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "ART_PDOLAR",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_EXEGRA",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "ART_MINIMO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_NEGATI",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "ART_COMPO",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_COMI1",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_COMI2",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_COMI3",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_ACTIV",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_OBSE",
+      "type": "C",
+      "length": 250
+    },
+    {
+      "name": "ART_VENCI",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_DCOMP",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_SISCAN",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_TASFIN",
+      "type": "N",
+      "length": 6
+    },
+    {
+      "name": "ART_UNIMED",
+      "type": "C",
+      "length": 15
+    },
+    {
+      "name": "ART_CODMND",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "ART_IMPU",
+      "type": "N",
+      "length": 6
+    },
+    {
+      "name": "ART_PREMIN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_COSADI",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_JUNMED",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "ART_JUNPRE",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_JUNCAN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_ULTJUN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_MONEDA",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "ART_CANPMI",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_CODORI",
+      "type": "C",
+      "length": 50
+    },
+    {
+      "name": "ART_LEY102",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_ALTA",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "ART_ULTMOD",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "ART_STKINI",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_PRECAJ",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_PRESEN",
+      "type": "C",
+      "length": 60
+    },
+    {
+      "name": "ART_TMPST1",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_TMPST2",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_RUTIMP",
+      "type": "C",
+      "length": 120
+    },
+    {
+      "name": "ART_MAXDES",
+      "type": "N",
+      "length": 7
+    },
+    {
+      "name": "ART_SINSTK",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_UBICA",
+      "type": "C",
+      "length": 50
+    },
+    {
+      "name": "ART_PORMIN",
+      "type": "N",
+      "length": 7
+    },
+    {
+      "name": "ART_VALCOM",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_PESO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_STKSEG",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_NAPCSE",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_NAPVSE",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_SOLMUL",
+      "type": "N",
+      "length": 12
+    },
+    {
+      "name": "ART_NRETUR",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_NOTVEN",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_FORCAN",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "ART_DEPVEN",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "ART_CANCAJ",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_CODCSF",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "ART_NROPER",
+      "type": "N",
+      "length": 3
+    },
+    {
+      "name": "ART_PREOFE",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_DESOFE",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "ART_HASOFE",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "ART_CAJACO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_SIMGCO",
+      "type": "C",
+      "length": 5
+    },
+    {
+      "name": "ART_TIPO",
+      "type": "N",
+      "length": 1
+    },
+    {
+      "name": "ART_VALMED",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_DIMEN",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "ART_PREMAX",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_COSTOB",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_CTACON",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "ART_VENCON",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_CENPDU",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_CSAPDU",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_DESCU",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_ACVEPR",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_NDUPCM",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_NSESIO",
+      "type": "C",
+      "length": 10
+    },
+    {
+      "name": "ART_RELMEC",
+      "type": "N",
+      "length": 1
+    },
+    {
+      "name": "ART_CAQUME",
+      "type": "N",
+      "length": 15
+    },
+    {
+      "name": "ART_POQUME",
+      "type": "N",
+      "length": 12
+    },
+    {
+      "name": "ART_LMECOS",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_STKOFE",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_PORASE",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "ART_PRECA1",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_PRECA2",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_PRECA3",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_PRECA4",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_PRECA5",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_PRECA6",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_PRECA7",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_STKCRI",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "ART_MPRBLO",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "ART_NMATRI",
+      "type": "L",
+      "length": 1
+    }
+  ],
+  "cliente.dbf": [
+    {
+      "name": "CLI_CODIGO",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "CLI_NOMBRE",
+      "type": "C",
+      "length": 60
+    },
+    {
+      "name": "CLI_TELEFO",
+      "type": "C",
+      "length": 100
+    },
+    {
+      "name": "CLI_DIRECC",
+      "type": "C",
+      "length": 150
+    },
+    {
+      "name": "CLI_DEPA",
+      "type": "C",
+      "length": 40
+    },
+    {
+      "name": "CLI_CIUDAD",
+      "type": "C",
+      "length": 40
+    },
+    {
+      "name": "CLI_ZONA",
+      "type": "C",
+      "length": 10
+    },
+    {
+      "name": "CLI_RUC",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CODVDD",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "CLI_CTACTE",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CODBAN",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "CLI_LIMITE",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "CLI_RENTA",
+      "type": "N",
+      "length": 6
+    },
+    {
+      "name": "CLI_RETIVA",
+      "type": "N",
+      "length": 6
+    },
+    {
+      "name": "CLI_PROPIE",
+      "type": "C",
+      "length": 50
+    },
+    {
+      "name": "CLI_CONTAC",
+      "type": "C",
+      "length": 50
+    },
+    {
+      "name": "CLI_CODCAN",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "CLI_RUTA",
+      "type": "N",
+      "length": 5
+    },
+    {
+      "name": "CLI_CI",
+      "type": "N",
+      "length": 20
+    },
+    {
+      "name": "CLI_ACTIVO",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_FECING",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "CLI_FECNAC",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "CLI_ESTCIV",
+      "type": "C",
+      "length": 10
+    },
+    {
+      "name": "CLI_PUNREF",
+      "type": "C",
+      "length": 40
+    },
+    {
+      "name": "CLI_LUGTRA",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_TRADIR",
+      "type": "C",
+      "length": 40
+    },
+    {
+      "name": "CLI_INGTRA",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "CLI_TELTRA",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "CLI_TRAREF",
+      "type": "C",
+      "length": 40
+    },
+    {
+      "name": "CLI_TRACAR",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "CLI_CYUNOM",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CYUCI",
+      "type": "C",
+      "length": 15
+    },
+    {
+      "name": "CLI_CYUTRA",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CYUTEL",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "CLI_GNTNOM",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_GNTTRA",
+      "type": "C",
+      "length": 40
+    },
+    {
+      "name": "CLI_GNTTEL",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "CLI_GNTFIT",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "CLI_GNTCI",
+      "type": "C",
+      "length": 15
+    },
+    {
+      "name": "CLI_OBSERV",
+      "type": "C",
+      "length": 250
+    },
+    {
+      "name": "CLI_NROFIN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "CLI_NROCAT",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "CLI_CODSUC",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "CLI_MSURGE",
+      "type": "C",
+      "length": 250
+    },
+    {
+      "name": "CLI_VENNOT",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_NOTPRE",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_EMAIL1",
+      "type": "C",
+      "length": 60
+    },
+    {
+      "name": "CLI_EMAIL2",
+      "type": "C",
+      "length": 60
+    },
+    {
+      "name": "CLI_EMAIL3",
+      "type": "C",
+      "length": 60
+    },
+    {
+      "name": "CLI_LEY102",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_ULTINF",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "CLI_NROINF",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "CLI_INFOBS",
+      "type": "C",
+      "length": 240
+    },
+    {
+      "name": "CLI_IDPVEN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "CLI_NROFAX",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CELU1",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CELU2",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_PLACRE",
+      "type": "N",
+      "length": 3
+    },
+    {
+      "name": "CLI_NOTNTC",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_ENCAR",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_COSEMO",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_DIRGAR",
+      "type": "C",
+      "length": 60
+    },
+    {
+      "name": "CLI_CODPLA",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "CLI_VENPAG",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_CLEGAL",
+      "type": "C",
+      "length": 80
+    },
+    {
+      "name": "CLI_RUTCON",
+      "type": "C",
+      "length": 200
+    },
+    {
+      "name": "CLI_DIAPER",
+      "type": "N",
+      "length": 3
+    },
+    {
+      "name": "CLI_CBARRA",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CODMTZ",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "CLI_REGTUR",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_MONDES",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "CLI_MONPUN",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "CLI_CODCJR",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "CLI_NACIO",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CODCND",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "CLI_PAIS",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_CODEU",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "CLI_NORDEN",
+      "type": "N",
+      "length": 5
+    },
+    {
+      "name": "CLI_CODCPB",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "CLI_SOLESP",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_CLAESP",
+      "type": "C",
+      "length": 50
+    },
+    {
+      "name": "CLI_INFSIT",
+      "type": "N",
+      "length": 1
+    },
+    {
+      "name": "CLI_DOCTIP",
+      "type": "N",
+      "length": 1
+    },
+    {
+      "name": "CLI_DOCNUM",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "CLI_EMA1HA",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_EMA2HA",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_EMA3HA",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_FECCON",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "CLI_PDURUC",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_IDTIMV",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "CLI_NREPCA",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_IDCHIP",
+      "type": "C",
+      "length": 15
+    },
+    {
+      "name": "CLI_CIRELE",
+      "type": "C",
+      "length": 15
+    },
+    {
+      "name": "CLI_LOCALI",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_BARRIO",
+      "type": "C",
+      "length": 30
+    },
+    {
+      "name": "CLI_GRUSAN",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "CLI_TIPSAN",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "CLI_CODPZC",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "CLI_NMORUC",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "CLI_TIPVTO",
+      "type": "N",
+      "length": 1
+    },
+    {
+      "name": "CLI_NROREG",
+      "type": "C",
+      "length": 15
+    },
+    {
+      "name": "CLI_NROREF",
+      "type": "C",
+      "length": 40
+    },
+    {
+      "name": "CLI_NOMCOR",
+      "type": "C",
+      "length": 10
+    }
+  ],
+  "aventa.dbf": [
+    {
+      "name": "VEN_NUMERO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_FECHA",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "VEN_CODCLI",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "VEN_TOTAL",
+      "type": "N",
+      "length": 13
+    },
+    {
+      "name": "VEN_PAGADO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_CODVDD",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VEN_CODSUC",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "VEN_CODCPB",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "VEN_OBSE",
+      "type": "C",
+      "length": 250
+    },
+    {
+      "name": "VEN_SITUAC",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "VEN_FECCOB",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "VEN_RENTA",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_DESCU",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_RETIVA",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_NLEGAL",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_TIPVEN",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "VEN_HORA",
+      "type": "C",
+      "length": 8
+    },
+    {
+      "name": "VEN_IVA",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_RECAR",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_TIPFAC",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "VEN_NROREM",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_FECREM",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "VEN_TOTEXE",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_TOTGRA",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_CODCHO",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "VEN_CANCUO",
+      "type": "N",
+      "length": 3
+    },
+    {
+      "name": "VEN_COMPRO",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "VEN_CODPLA",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VEN_ENTRE",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_VCTADE",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "VEN_CODCND",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VEN_NROPSP",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_IVA05",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_IVA10",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_VOPNRO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_CODMND",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "VEN_CAMBIO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_CODCAN",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VEN_MONENT",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_MNDENT",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "VEN_CODCJR",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VEN_TOT10",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "VEN_TOT05",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "VEN_MONNTC",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "VEN_NROTIM",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_NROPEX",
+      "type": "N",
+      "length": 3
+    },
+    {
+      "name": "VEN_NROEST",
+      "type": "N",
+      "length": 3
+    },
+    {
+      "name": "VEN_ESTADO",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "VEN_VDDCIE",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VEN_CANIMP",
+      "type": "N",
+      "length": 3
+    },
+    {
+      "name": "VEN_PUNTO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_PUNCAN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_NRODOC",
+      "type": "N",
+      "length": 5
+    },
+    {
+      "name": "VEN_FHOENT",
+      "type": "T",
+      "length": 8
+    },
+    {
+      "name": "VEN_FHOSAL",
+      "type": "T",
+      "length": 8
+    },
+    {
+      "name": "VEN_NROSCA",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_NROREF",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_CODEVE",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VEN_FECELE",
+      "type": "T",
+      "length": 8
+    },
+    {
+      "name": "VEN_SIFEN",
+      "type": "N",
+      "length": 2
+    },
+    {
+      "name": "VEN_CODUSU",
+      "type": "C",
+      "length": 10
+    },
+    {
+      "name": "VEN_IDTIM",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VEN_ETRTOT",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "VEN_CODCQT",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "VEN_ANTPAG",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "VEN_OBSFAC",
+      "type": "C",
+      "length": 100
+    },
+    {
+      "name": "VEN_NROORI",
+      "type": "N",
+      "length": 15
+    },
+    {
+      "name": "VEN_CODTPT",
+      "type": "C",
+      "length": 10
+    },
+    {
+      "name": "VEN_EXPORT",
+      "type": "L",
+      "length": 1
+    }
+  ],
+  "avenitem.dbf": [
+    {
+      "name": "VIT_NUMERO",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_DEPOSI",
+      "type": "C",
+      "length": 2
+    },
+    {
+      "name": "VIT_ARTICU",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "VIT_CANTI",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_EXEGRA",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "VIT_PRECIO",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "VIT_DESCU",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_DEVU",
+      "type": "N",
+      "length": 7
+    },
+    {
+      "name": "VIT_CODCLI",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "VIT_CLICBA",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "VIT_VALIVA",
+      "type": "N",
+      "length": 7
+    },
+    {
+      "name": "VIT_LIQVDD",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "VIT_PREMIN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_ITEM",
+      "type": "N",
+      "length": 3
+    },
+    {
+      "name": "VIT_IMPRE",
+      "type": "L",
+      "length": 1
+    },
+    {
+      "name": "VIT_OBSE",
+      "type": "C",
+      "length": 250
+    },
+    {
+      "name": "VIT_COSTO",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "VIT_CODCAN",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VIT_ENVIA",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_REGTUR",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "VIT_LOTE",
+      "type": "C",
+      "length": 20
+    },
+    {
+      "name": "VIT_VENCI",
+      "type": "D",
+      "length": 8
+    },
+    {
+      "name": "VIT_EMPAQ",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "VIT_CODPRO",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "VIT_ARTORI",
+      "type": "C",
+      "length": 6
+    },
+    {
+      "name": "VIT_NLEGAL",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_NROTIM",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_CODAPS",
+      "type": "C",
+      "length": 3
+    },
+    {
+      "name": "VIT_APSCAN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_APSVEN",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_CANON",
+      "type": "N",
+      "length": 14
+    },
+    {
+      "name": "VIT_ESTADO",
+      "type": "C",
+      "length": 1
+    },
+    {
+      "name": "VIT_CUEORI",
+      "type": "N",
+      "length": 10
+    },
+    {
+      "name": "VIT_HORCMD",
+      "type": "T",
+      "length": 8
+    }
+  ]
+}
