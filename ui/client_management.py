@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QLineEdit, QPushButton, QFormLayout, 
-                             QHeaderView, QMessageBox, QGroupBox, QSplitter)
+                             QHeaderView, QMessageBox, QGroupBox, QSplitter, QComboBox)
 from PyQt6.QtCore import Qt
 from database import SessionLocal
 import models
@@ -47,6 +47,10 @@ class ClientManagementDialog(QDialog):
         self.txt_telefo = QLineEdit()
         self.txt_limite = QLineEdit("0.0")
         
+        self.cmb_price_list = QComboBox()
+        self.cmb_price_list.addItem("— Sin Lista Especial —", None)
+        self._load_price_lists()
+        
         form_layout.addRow("Código (*):", self.txt_codigo)
         form_layout.addRow("Nombre (*):", self.txt_nombre)
         form_layout.addRow("RUC:", self.txt_ruc)
@@ -54,6 +58,7 @@ class ClientManagementDialog(QDialog):
         form_layout.addRow("Dirección:", self.txt_direcc)
         form_layout.addRow("Teléfono:", self.txt_telefo)
         form_layout.addRow("Límite de Crédito (Gs):", self.txt_limite)
+        form_layout.addRow("Lista de Precios:", self.cmb_price_list)
         
         right_layout.addLayout(form_layout)
         
@@ -85,6 +90,13 @@ class ClientManagementDialog(QDialog):
         
         self.load_clients()
         
+    def _load_price_lists(self):
+        db = SessionLocal()
+        lists = db.query(models.PriceList).all()
+        for lst in lists:
+            self.cmb_price_list.addItem(lst.pl_nombre, lst.id)
+        db.close()
+
     def load_clients(self):
         query_text = self.txt_search.text().lower()
         db = SessionLocal()
@@ -127,6 +139,12 @@ class ClientManagementDialog(QDialog):
             self.txt_telefo.setText(cli.cli_telefo)
             self.txt_limite.setText(str(cli.cli_limite))
             
+            idx = self.cmb_price_list.findData(cli.price_list_id)
+            if idx >= 0:
+                self.cmb_price_list.setCurrentIndex(idx)
+            else:
+                self.cmb_price_list.setCurrentIndex(0)
+            
             self.txt_codigo.setReadOnly(True)
         db.close()
         
@@ -140,6 +158,7 @@ class ClientManagementDialog(QDialog):
         self.txt_direcc.clear()
         self.txt_telefo.clear()
         self.txt_limite.setText("0.0")
+        self.cmb_price_list.setCurrentIndex(0)
         self.txt_codigo.setFocus()
         
     def save_client(self):

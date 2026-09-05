@@ -111,7 +111,7 @@ class CajaDialog(QDialog):
             self.table.setItem(row, 4, QTableWidgetItem(pago.cob_mndori))
             
             if pago.cob_mndori in totales:
-                totales[pago.cob_mndori] += pago.cob_monto
+                totales[pago.cob_mndori] += float(pago.cob_monto)
                 
         # Actualizar labels de resumen
         self.lbl_pyg.setText(f"{totales['PYG']:,.0f}")

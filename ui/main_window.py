@@ -1,9 +1,16 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
-                             QMenuBar, QMenu, QGridLayout, QLineEdit, QGroupBox)
+                             QMenuBar, QMenu, QGridLayout, QLineEdit, QGroupBox, QCheckBox, QFrame, QCompleter, QTableView)
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QFont, QAction, QColor
+from PyQt6.QtGui import QIcon, QFont, QAction, QColor, QPixmap
+
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../.agents/skills/ean13_parser/scripts')))
+import ean13_parser
+from ui.ventas_table_model import VentasTableModel
+from ui.sync_worker import SyncWorker
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -11,6 +18,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Registro de Venta por Escritorio")
         self.resize(1200, 800)
         
+        # --- ARQUEO Y SESIÓN ---
+        self.session_id = None
+        self.init_cash_session()
+
         self.create_menu_bar()
         
         central_widget = QWidget()
@@ -44,17 +55,32 @@ class MainWindow(QMainWindow):
         btn_caja = QPushButton("Caja")
         btn_caja.clicked.connect(self.open_caja_dialog)
         
+        btn_reporte_z = QPushButton("Cerrar Turno (Reporte Z)")
+        btn_reporte_z.setStyleSheet("background-color: darkred; color: white;")
+        btn_reporte_z.clicked.connect(self.open_reporte_z)
+        
         action_buttons_layout.addWidget(btn_articulo)
         action_buttons_layout.addWidget(btn_cliente)
         action_buttons_layout.addWidget(btn_caja)
+        action_buttons_layout.addWidget(btn_reporte_z)
         action_buttons_layout.addStretch()
         
         top_panel_layout.addLayout(action_buttons_layout)
         
         # 3. Cabecera de Factura Actual (Derecha)
         cabecera_layout = QGridLayout()
+        
+        # Indicador de Red
+        self.lbl_network_status = QLabel("🔴 Offline")
+        self.lbl_network_status.setStyleSheet("color: red; font-weight: bold; font-size: 14px;")
+        self.lbl_network_status.setAlignment(Qt.AlignmentFlag.AlignRight)
+        cabecera_layout.addWidget(self.lbl_network_status, 0, 5, 1, 2)
+        
         cabecera_layout.addWidget(QLabel("Fecha:"), 0, 0)
-        cabecera_layout.addWidget(QLineEdit("08/09/2026"), 0, 1)
+        from PyQt6.QtCore import QDate
+        date_edit = QLineEdit(QDate.currentDate().toString("dd-MM-yyyy"))
+        date_edit.setReadOnly(True)
+        cabecera_layout.addWidget(date_edit, 0, 1)
         cabecera_layout.addWidget(QLabel("Fact.:"), 0, 2)
         cabecera_layout.addWidget(QLineEdit("1/1"), 0, 3)
         cabecera_layout.addWidget(QLabel("Nº: 4203"), 0, 4) # Resaltado en naranja en la imagen
@@ -78,6 +104,7 @@ class MainWindow(QMainWindow):
         scanner_layout.addWidget(QLabel("Código de Barras / Artículo:"))
         self.txt_codigo = QLineEdit()
         self.txt_codigo.setPlaceholderText("Escanee el código de barras y presione ENTER")
+        self.txt_codigo.textChanged.connect(lambda t, le=self.txt_codigo: self.auto_format_thousands(t, le))
         self.txt_codigo.returnPressed.connect(self.buscar_producto)
         scanner_layout.addWidget(self.txt_codigo, stretch=1)
         
@@ -85,17 +112,73 @@ class MainWindow(QMainWindow):
         btn_buscar.clicked.connect(self.open_product_search)
         scanner_layout.addWidget(btn_buscar)
         
+        self.chk_visor = QCheckBox("Ocultar Visor de Producto")
+        self.chk_visor.setChecked(False)
+        self.chk_visor.toggled.connect(self.toggle_visor_producto)
+        scanner_layout.addWidget(self.chk_visor)
+        
         main_layout.addLayout(scanner_layout)
         
         # --- PANEL CENTRAL (Detalle de Factura) ---
-        self.table_detalle = QTableWidget(0, 9)
-        self.table_detalle.setHorizontalHeaderLabels(["Nro", "Codigo", "Descripcion", "Dp", "Cantidad", "Imp", "Iva", "Precio", "Total"])
+        central_panel_layout = QHBoxLayout()
+        
+        self.table_detalle = QTableView()
+        self.ventas_model = VentasTableModel()
+        self.ventas_model.qty_changed_for_tier.connect(self.on_qty_changed_tier)
+        self.table_detalle.setModel(self.ventas_model)
         self.table_detalle.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table_detalle.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         
-        # Permitir edición solo en la columna de Cantidad
-        self.table_detalle.itemChanged.connect(self.on_item_changed)
+        self.ventas_model.dataChanged.connect(self.calcular_totales)
+        self.table_detalle.selectionModel().selectionChanged.connect(self.update_product_view)
+        self.table_detalle.itemDelegate().closeEditor.connect(self.focus_codigo)
         
-        main_layout.addWidget(self.table_detalle, stretch=2)
+        central_panel_layout.addWidget(self.table_detalle, stretch=3)
+        
+        # --- VISOR DE PRODUCTO ---
+        self.product_view_panel = QGroupBox("Detalle de Producto")
+        self.product_view_panel.setVisible(False)
+        self.product_view_panel.setFixedWidth(250)
+        
+        from PyQt6.QtWidgets import QSizePolicy
+        sp = self.product_view_panel.sizePolicy()
+        sp.setRetainSizeWhenHidden(True)
+        self.product_view_panel.setSizePolicy(sp)
+        
+        visor_layout = QVBoxLayout()
+        
+        # Imagen placeholder
+        self.lbl_visor_img = QLabel("📷\nSin Imagen")
+        self.lbl_visor_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_visor_img.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc; color: #888;")
+        self.lbl_visor_img.setFixedHeight(180)
+        self.lbl_visor_img.setFont(QFont("Segoe UI Emoji", 24))
+        visor_layout.addWidget(self.lbl_visor_img)
+        
+        # Textos
+        self.lbl_visor_descri = QLabel("Seleccione un producto")
+        self.lbl_visor_descri.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        self.lbl_visor_descri.setWordWrap(True)
+        visor_layout.addWidget(self.lbl_visor_descri)
+        
+        self.lbl_visor_codigo = QLabel("Código: -")
+        visor_layout.addWidget(self.lbl_visor_codigo)
+        
+        self.lbl_visor_precio = QLabel("Precio: -")
+        self.lbl_visor_precio.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        self.lbl_visor_precio.setStyleSheet("color: #2e7d32;")
+        visor_layout.addWidget(self.lbl_visor_precio)
+        
+        self.lbl_visor_stock = QLabel("Stock Disponible: -")
+        self.lbl_visor_stock.setFont(QFont("Arial", 11))
+        visor_layout.addWidget(self.lbl_visor_stock)
+        
+        visor_layout.addStretch()
+        self.product_view_panel.setLayout(visor_layout)
+        
+        central_panel_layout.addWidget(self.product_view_panel)
+        
+        main_layout.addLayout(central_panel_layout, stretch=2)
         
         # --- PANEL INFERIOR ---
         bottom_panel_layout = QHBoxLayout()
@@ -159,6 +242,47 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(bottom_panel_layout, stretch=1)
         
         self.cargar_historial_ventas()
+        self.setup_autocomplete()
+        
+        # Iniciar Sincronización
+        self.sync_worker = SyncWorker()
+        self.sync_worker.status_changed.connect(self.update_network_status)
+        self.sync_worker.start()
+
+    def update_network_status(self, is_online):
+        if is_online:
+            self.lbl_network_status.setText("🟢 Online (Sincronizando)")
+            self.lbl_network_status.setStyleSheet("color: green; font-weight: bold; font-size: 14px;")
+        else:
+            self.lbl_network_status.setText("🔴 Modo Local (Offline)")
+            self.lbl_network_status.setStyleSheet("color: red; font-weight: bold; font-size: 14px;")
+            
+    def closeEvent(self, event):
+        if hasattr(self, 'sync_worker'):
+            self.sync_worker.stop()
+        super().closeEvent(event)
+        
+    def setup_autocomplete(self):
+        from database import SessionLocal
+        import models
+        from PyQt6.QtCore import Qt, QStringListModel
+        
+        db = SessionLocal()
+        productos = db.query(models.Product).filter(models.Product.is_active == True).all()
+        
+        sugerencias = []
+        for p in productos:
+            sugerencias.append(f"{p.art_codigo} - {p.art_descri}")
+            
+        db.close()
+        
+        model = QStringListModel(sugerencias)
+        completer = QCompleter()
+        completer.setModel(model)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        
+        self.txt_codigo.setCompleter(completer)
         
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_F8:
@@ -171,51 +295,41 @@ class MainWindow(QMainWindow):
             self.procesar_remision()
         elif event.key() == Qt.Key.Key_Delete:
             # Borrar fila seleccionada
-            current_row = self.table_detalle.currentRow()
-            if current_row >= 0:
-                self.table_detalle.removeRow(current_row)
+            indexes = self.table_detalle.selectionModel().selectedRows()
+            if indexes:
+                self.ventas_model.remove_item(indexes[0].row())
                 self.calcular_totales()
         else:
             super().keyPressEvent(event)
             
-    def on_item_changed(self, item):
-        # Evitar recursividad si estamos modificando el Total desde código
-        if item.column() == 4: # Columna Cantidad
-            try:
-                row = item.row()
-                cantidad = float(item.text())
-                precio_item = self.table_detalle.item(row, 7)
-                if precio_item:
-                    precio = float(precio_item.text().replace(',', ''))
-                    nuevo_total = cantidad * precio
-                    
-                    # Actualizar celda de Total temporalmente desconectando la señal
-                    self.table_detalle.itemChanged.disconnect(self.on_item_changed)
-                    self.table_detalle.setItem(row, 8, QTableWidgetItem(f"{nuevo_total:,.0f}"))
-                    self.table_detalle.itemChanged.connect(self.on_item_changed)
-                    
-                    self.calcular_totales()
-            except ValueError:
-                pass # Si escriben letras, ignorar
+
                 
     def procesar_factura(self):
-        if self.table_detalle.rowCount() == 0:
+        if self.ventas_model.rowCount() == 0:
             return
             
         totals = {
-            'PYG': float(self.lbl_pyg.text().replace(',', '')),
-            'USD': float(self.lbl_usd.text().replace(',', '')),
-            'BRL': float(self.lbl_brl.text().replace(',', '')),
-            'ARS': float(self.lbl_ars.text().replace(',', ''))
+            'PYG': _safe_dec(self.lbl_pyg.text().replace(',', '')),
+            'USD': _safe_dec(self.lbl_usd.text().replace(',', '')),
+            'BRL': _safe_dec(self.lbl_brl.text().replace(',', '')),
+            'ARS': _safe_dec(self.lbl_ars.text().replace(',', ''))
         }
         
+        from database import SessionLocal
+        import models
+        db = SessionLocal()
+        cliente_txt = self.txt_cliente.text()
+        cod_cli = cliente_txt.split(" - ")[0] if " - " in cliente_txt else None
+        cliente = db.query(models.Client).filter_by(cli_codigo=cod_cli).first() if cod_cli else None
+        db.close()
+        
         from ui.payment_dialog import PaymentDialog
-        dialog = PaymentDialog(totals, self)
+        dialog = PaymentDialog(totals, cliente, self)
         if dialog.exec():
             if dialog.payment_successful:
-                self.guardar_venta_db(dialog.moneda_pago, dialog.monto_pagado)
+                self.guardar_venta_db(dialog.payments_list)
                 
-    def guardar_venta_db(self, moneda, monto_pagado):
+    def guardar_venta_db(self, payments_list):
         from database import SessionLocal
         import models
         db = SessionLocal()
@@ -227,17 +341,17 @@ class MainWindow(QMainWindow):
             
             nueva_venta = models.Invoice(
                 ven_codcli=cod_cli,
-                ven_total=float(self.lbl_pyg.text().replace(',', '')),
-                ven_codmnd=moneda
+                ven_total=_safe_dec(self.lbl_pyg.text().replace(',', '')),
+                ven_codmnd='PYG'
             )
             db.add(nueva_venta)
             db.flush() # Para obtener el ID generado
             
             # 2. Crear Detalle de Factura y Descontar Stock
-            for row in range(self.table_detalle.rowCount()):
-                cod_art = self.table_detalle.item(row, 1).text()
-                cantidad = float(self.table_detalle.item(row, 4).text())
-                precio = float(self.table_detalle.item(row, 7).text().replace(',', ''))
+            for item_data in self.ventas_model.items:
+                cod_art = item_data['codigo']
+                cantidad = item_data['cantidad']
+                precio = item_data['precio']
                 
                 item = models.InvoiceItem(
                     vit_numero=nueva_venta.id,
@@ -247,23 +361,59 @@ class MainWindow(QMainWindow):
                 )
                 db.add(item)
                 
-                # Descontar stock
+                # Descontar stock general
                 producto = db.query(models.Product).filter_by(art_codigo=cod_art).first()
                 if producto:
-                    producto.art_stkini -= int(cantidad)
+                    producto.art_stkini = _safe_dec(producto.art_stkini or 0) - _safe_dec(cantidad)
+                    
+                    # FIFO Descontar stock de lotes
+                    qty_to_deduct = _safe_dec(cantidad)
+                    batches = (db.query(models.ProductBatch)
+                                 .filter(models.ProductBatch.product_id == producto.id, 
+                                         models.ProductBatch.stock_actual > 0)
+                                 .order_by(models.ProductBatch.fecha_vencimiento.asc())
+                                 .all())
+                    
+                    from decimal import Decimal
+                    for b in batches:
+                        if qty_to_deduct <= 0:
+                            break
+                        available = _safe_dec(b.stock_actual)
+                        if available >= qty_to_deduct:
+                            b.stock_actual = Decimal(str(available - qty_to_deduct))
+                            qty_to_deduct = 0
+                        else:
+                            b.stock_actual = Decimal("0")
+                            qty_to_deduct = _safe_dec(qty_to_deduct) - _safe_dec(available)
             
             # 3. Registrar Cobranza
-            pago = models.Payment(
-                cob_monto=monto_pagado,
-                cob_vennro=nueva_venta.id,
-                cob_mndori=moneda
-            )
-            db.add(pago)
+            for p in payments_list:
+                pago = models.Payment(
+                    cob_monto=p['monto_origen'],
+                    cob_monto_pyg=p['monto_pyg'],
+                    cob_vennro=nueva_venta.id,
+                    cob_mndori=p['moneda'],
+                    cob_metodo=p['metodo'],
+                    session_id=self.session_id
+                )
+                db.add(pago)
+                
+                if p['metodo'] == 'Cuenta Corriente':
+                    # Find client again using the session
+                    cli_cc = db.query(models.Client).filter_by(cli_codigo=cod_cli).first()
+                    if cli_cc:
+                        trx = models.CustomerTransaction(
+                            client_id=cli_cc.id,
+                            tipo='CHARGE',
+                            monto=p['monto_pyg'],
+                            referencia=f"Factura #{nueva_venta.id or 'Nueva'}"
+                        )
+                        db.add(trx)
             
             db.commit()
             
             # Limpiar pantalla para próxima venta
-            self.table_detalle.setRowCount(0)
+            self.ventas_model.clear()
             self.txt_cliente.setText("000001 - CONSUMIDOR FINAL")
             self.calcular_totales()
             self.cargar_historial_ventas()
@@ -332,15 +482,35 @@ class MainWindow(QMainWindow):
         dialog = ClientManagementDialog(self)
         dialog.exec()
         
+    def open_reporte_z(self):
+        from ui.arqueo_dialog import ArqueoDialog
+        dialog = ArqueoDialog(self.session_id, self)
+        if dialog.exec():
+            # Session was closed, init a new one
+            self.init_cash_session()
+
     def open_caja_dialog(self):
         from ui.caja_dialog import CajaDialog
         dialog = CajaDialog(self)
         dialog.exec()
                 
     def buscar_producto(self):
-        codigo = self.txt_codigo.text().strip()
-        if not codigo:
+        texto_busqueda = self.txt_codigo.text().strip()
+        if not texto_busqueda:
             return
+            
+        if " - " in texto_busqueda:
+            codigo = texto_busqueda.split(" - ")[0].strip()
+        else:
+            codigo = texto_busqueda
+            
+        # SKILL: EAN-13 PARSER
+        parsed = ean13_parser.parse_scale_barcode(codigo, modo="peso")
+        cantidad_balanza = 1.0
+        if parsed.get("es_balanza"):
+            codigo = parsed["plu"].zfill(6)
+            if parsed["tipo"] == "BALANZA_PESO":
+                cantidad_balanza = _safe_dec(parsed["peso_kg"])
             
         from database import SessionLocal
         import models
@@ -362,64 +532,104 @@ class MainWindow(QMainWindow):
         db.close()
         
         if prod:
-            self.add_product_to_grid(prod, cantidad=1.0 * factor_conversion)
+            final_qty = cantidad_balanza if parsed.get("es_balanza") else 1.0 * factor_conversion
             self.txt_codigo.clear()
-            self.txt_codigo.setFocus()
+            self.add_product_to_grid(prod, cantidad=final_qty)
         else:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "No Encontrado", "Artículo no encontrado o inactivo.")
             self.txt_codigo.selectAll()
             
-    def add_product_to_grid(self, product, cantidad=1.0):
-        # Verificar si ya existe en la grilla para sumar cantidad
-        for row in range(self.table_detalle.rowCount()):
-            if self.table_detalle.item(row, 1).text() == product.art_codigo:
-                current_qty = float(self.table_detalle.item(row, 4).text())
-                new_qty = current_qty + cantidad
-                self.table_detalle.item(row, 4).setText(str(new_qty))
-                
-                precio = product.art_preven
-                subtotal = new_qty * precio
-                self.table_detalle.item(row, 8).setText(f"{subtotal:,.0f}")
-                self.calcular_totales()
-                return
-                
-        # Si no existe, agregar nueva fila
-        row = self.table_detalle.rowCount()
-        self.table_detalle.insertRow(row)
+    def get_precio_vigente(self, art_codigo, cantidad=1):
+        """Devuelve (precio, label). Prioridad: Promo > Tier > Lista de Precio de Cliente > Normal."""
+        from database import SessionLocal
+        import models
+        import datetime as dt
+        now = dt.datetime.now()
+        db = SessionLocal()
         
-        precio = product.art_preven
-        total = precio * cantidad
+        # 1. Promo temporal (mayor prioridad)
+        promo = db.query(models.ProductPromo).filter(
+            models.ProductPromo.pro_articu == art_codigo,
+            models.ProductPromo.is_active == True,
+            models.ProductPromo.pro_desde <= now,
+            models.ProductPromo.pro_hasta >= now,
+        ).order_by(models.ProductPromo.pro_hasta.asc()).first()
         
-        self.table_detalle.setItem(row, 0, QTableWidgetItem(str(row + 1)))
-        self.table_detalle.setItem(row, 1, QTableWidgetItem(product.art_codigo))
+        if promo:
+            db.close()
+            return _safe_dec(promo.pro_precio), f"\U0001f3f7\ufe0f {promo.pro_descri or 'PROMO'}"
         
-        descri = product.art_descri
-        if product.is_fractional:
-            descri += " (Fraccionable)"
+        # 2. Precio por volumen (tier)
+        tier = (db.query(models.PriceTier)
+                  .filter(
+                      models.PriceTier.pt_articu == art_codigo,
+                      models.PriceTier.is_active == True,
+                      models.PriceTier.pt_qty_min <= cantidad,
+                  )
+                  .order_by(models.PriceTier.pt_qty_min.desc())
+                  .first())
+        
+        if tier:
+            db.close()
+            return _safe_dec(tier.pt_precio), f"\U0001f4ca {tier.pt_descri or f'{int(cantidad)}+ u'}"
             
-        self.table_detalle.setItem(row, 2, QTableWidgetItem(descri))
-        self.table_detalle.setItem(row, 3, QTableWidgetItem("DC")) 
-        self.table_detalle.setItem(row, 4, QTableWidgetItem(str(cantidad)))
-        self.table_detalle.setItem(row, 5, QTableWidgetItem("I")) 
-        self.table_detalle.setItem(row, 6, QTableWidgetItem(str(product.art_impu)))
-        self.table_detalle.setItem(row, 7, QTableWidgetItem(f"{precio:,.0f}"))
-        self.table_detalle.setItem(row, 8, QTableWidgetItem(f"{total:,.0f}"))
+        # 3. Lista de precio del cliente
+        cliente_txt = self.txt_cliente.text()
+        cod_cli = cliente_txt.split(" - ")[0] if " - " in cliente_txt else None
+        if cod_cli:
+            cliente = db.query(models.Client).filter_by(cli_codigo=cod_cli).first()
+            if cliente and cliente.price_list_id:
+                list_item = db.query(models.PriceListItem).filter_by(
+                    pli_list_id=cliente.price_list_id, 
+                    pli_articu=art_codigo
+                ).first()
+                if list_item:
+                    nombre_lista = cliente.price_list.pl_nombre if cliente.price_list else "Lista Esp."
+                    db.close()
+                    return _safe_dec(list_item.pli_precio), f"\U0001f4cb {nombre_lista}"
         
+        # 4. Precio normal
+        prod = db.query(models.Product).filter_by(art_codigo=art_codigo).first()
+        db.close()
+        if prod:
+            return _safe_dec(prod.art_preven or 0), None
+        return 0.0, None
+
+    def add_product_to_grid(self, product, cantidad=1.0):
+        # Check current qty already in cart to determine tier correctly
+        qty_en_carrito = 0
+        for item in self.ventas_model.items:
+            if item['codigo'] == product.art_codigo:
+                qty_en_carrito = item['cantidad']
+                break
+        qty_total = qty_en_carrito + _safe_dec(cantidad)
+        precio, label = self.get_precio_vigente(product.art_codigo, qty_total)
+        row_idx = self.ventas_model.add_item(product, cantidad, precio_override=precio, promo_label=label)
         self.calcular_totales()
         
-    def calcular_totales(self):
-        total_pyg = 0.0
-        for row in range(self.table_detalle.rowCount()):
-            item_total = self.table_detalle.item(row, 8)
-            if item_total:
-                total_pyg += float(item_total.text().replace(',', ''))
+        if row_idx is not None:
+            self.table_detalle.selectRow(row_idx)
+            # Focus on Cantidad column (4)
+            index = self.ventas_model.index(row_idx, 4)
+            self.table_detalle.setCurrentIndex(index)
+            self.table_detalle.edit(index)
+        
+
+    def focus_codigo(self, editor=None, hint=None):
+        from PyQt6.QtCore import QTimer
+        # Usar un timer para asegurar que se procese el enter antes de mover el foco
+        QTimer.singleShot(0, lambda: self.txt_codigo.setFocus())
+        QTimer.singleShot(0, lambda: self.txt_codigo.selectAll())
+
+    def calcular_totales(self, topLeft=None, bottomRight=None, roles=None):
+        total_pyg = self.ventas_model.get_total_pyg()
                 
         # Traer cotizaciones
         from database import SessionLocal
         import models
         db = SessionLocal()
-        rates = {r.currency: r.rate_to_pyg for r in db.query(models.ExchangeRate).all()}
+        rates = {r.currency_code: _safe_dec(r.buy_rate) for r in db.query(models.CurrencyRate).filter_by(is_active=True).all()}
         db.close()
         
         rate_usd = rates.get("USD", 7500.0)
@@ -436,7 +646,7 @@ class MainWindow(QMainWindow):
         self.lbl_ars.setText(f"{total_ars:,.2f}")
         
     def procesar_remision(self):
-        if self.table_detalle.rowCount() == 0:
+        if self.ventas_model.rowCount() == 0:
             return
             
         from PyQt6.QtWidgets import QMessageBox
@@ -455,15 +665,15 @@ class MainWindow(QMainWindow):
             
             nueva_remision = models.Remission(
                 codcli=cod_cli,
-                total_pyg=float(self.lbl_pyg.text().replace(',', ''))
+                total_pyg=_safe_dec(self.lbl_pyg.text().replace(',', ''))
             )
             db.add(nueva_remision)
             db.flush()
             
-            for row in range(self.table_detalle.rowCount()):
-                cod_art = self.table_detalle.item(row, 1).text()
-                cantidad = float(self.table_detalle.item(row, 4).text())
-                precio = float(self.table_detalle.item(row, 7).text().replace(',', ''))
+            for item_data in self.ventas_model.items:
+                cod_art = item_data['codigo']
+                cantidad = item_data['cantidad']
+                precio = item_data['precio']
                 
                 item = models.RemissionItem(
                     remission_id=nueva_remision.id,
@@ -476,11 +686,11 @@ class MainWindow(QMainWindow):
                 # Descontar stock
                 producto = db.query(models.Product).filter_by(art_codigo=cod_art).first()
                 if producto:
-                    producto.art_stkini -= int(cantidad)
+                    producto.art_stkini = _safe_dec(producto.art_stkini) - _safe_dec(int(cantidad))
             
             db.commit()
             
-            self.table_detalle.setRowCount(0)
+            self.ventas_model.clear()
             self.txt_cliente.setText("000001 - CONSUMIDOR FINAL")
             self.calcular_totales()
             
@@ -513,3 +723,134 @@ class MainWindow(QMainWindow):
         action_conf = QAction("Configuración de Empresa", self)
         action_conf.triggered.connect(self.open_company_settings)
         menu_util.addAction(action_conf)
+        
+        menu_util.addSeparator()
+        
+        action_compras = QAction("🛒 Ingreso de Compras (Stock)", self)
+        action_compras.triggered.connect(self.open_purchase_dialog)
+        menu_util.addAction(action_compras)
+
+        action_promos = QAction("🏷️ Gestión de Promociones", self)
+        action_promos.triggered.connect(self.open_promos_dialog)
+        menu_util.addAction(action_promos)
+
+        action_tiers = QAction("💰 Precios por Volumen", self)
+        action_tiers.triggered.connect(self.open_price_tiers_dialog)
+        menu_util.addAction(action_tiers)
+
+    def open_purchase_dialog(self):
+        from ui.purchase_dialog import PurchaseDialog
+        dialog = PurchaseDialog(self)
+        dialog.exec()
+
+    def open_promos_dialog(self):
+        from ui.promos_dialog import PromosDialog
+        dialog = PromosDialog(self)
+        dialog.exec()
+
+    def open_price_tiers_dialog(self):
+        from ui.price_tiers_dialog import PriceTiersDialog
+        dialog = PriceTiersDialog(self)
+        dialog.exec()
+        
+    def open_price_lists_dialog(self):
+        from ui.price_lists_dialog import PriceListsDialog
+        dialog = PriceListsDialog(self)
+        dialog.exec()
+        
+    def open_customer_accounts_dialog(self):
+        from ui.customer_accounts_dialog import CustomerAccountsDialog
+        dialog = CustomerAccountsDialog(self)
+        dialog.exec()
+        
+    def open_returns_dialog(self):
+        from ui.returns_dialog import ReturnsDialog
+        dialog = ReturnsDialog(self)
+        dialog.exec()
+        
+    def open_batches_dialog(self):
+        from ui.batches_dialog import BatchesDialog
+        dialog = BatchesDialog(self)
+        dialog.exec()
+
+    def on_qty_changed_tier(self, row, nueva_qty):
+        """Re-checks price tiers when quantity changes directly in the grid."""
+        if row < 0 or row >= len(self.ventas_model.items):
+            return
+        item = self.ventas_model.items[row]
+        precio, label = self.get_precio_vigente(item['codigo'], nueva_qty)
+        # Update price and description in the model
+        item['precio'] = precio
+        # Update label: strip old tier/promo labels and apply new one
+        desc_base = item['descripcion']
+        for badge in ["📊 ", "🏷️ "]:
+            if badge in desc_base:
+                desc_base = desc_base.split("  " + badge)[0].strip()
+        if label:
+            item['descripcion'] = f"{desc_base}  {label}"
+        else:
+            item['descripcion'] = desc_base
+        self.ventas_model._recalcular_fila(row)
+        self.ventas_model.dataChanged.emit(
+            self.ventas_model.index(row, 0),
+            self.ventas_model.index(row, self.ventas_model.columnCount() - 1)
+        )
+        self.calcular_totales()
+
+    def toggle_visor_producto(self, checked):
+        self.product_view_panel.setVisible(not checked)
+        if not checked:
+            self.update_product_view()
+            
+    def init_cash_session(self):
+        from database import SessionLocal
+        import models
+        db = SessionLocal()
+        session = db.query(models.CashSession).filter_by(status='OPEN').first()
+        if not session:
+            session = models.CashSession(status='OPEN')
+            db.add(session)
+            db.commit()
+            db.refresh(session)
+        self.session_id = session.id
+        db.close()
+
+    def update_product_view(self):
+        if self.chk_visor.isChecked():
+            return
+            
+        indexes = self.table_detalle.selectionModel().selectedRows()
+        if not indexes:
+            self.lbl_visor_descri.setText("Seleccione un producto")
+            self.lbl_visor_codigo.setText("Código: -")
+            self.lbl_visor_precio.setText("Precio: -")
+            self.lbl_visor_stock.setText("Stock Disponible: -")
+            return
+            
+        row = indexes[0].row()
+        cod_art = self.ventas_model.items[row]['codigo']
+        
+        from database import SessionLocal
+        import models
+        db = SessionLocal()
+        
+        producto = db.query(models.Product).filter_by(art_codigo=cod_art).first()
+        db.close()
+        
+        if producto:
+            self.lbl_visor_descri.setText(producto.art_descri)
+            self.lbl_visor_codigo.setText(f"Código: {producto.art_codigo}")
+            self.lbl_visor_precio.setText(f"Precio: ₲ {producto.art_preven:,.0f}")
+            self.lbl_visor_stock.setText(f"Stock Disponible: {producto.art_stkini}")
+            
+            import os
+            if producto.image_path and os.path.exists(producto.image_path):
+                pixmap = QPixmap(producto.image_path)
+                self.lbl_visor_img.setPixmap(pixmap.scaled(self.lbl_visor_img.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            else:
+                self.lbl_visor_img.clear()
+                self.lbl_visor_img.setText("📷\nSin Imagen")
+        else:
+            self.lbl_visor_descri.setText("Producto no encontrado")
+            self.lbl_visor_img.clear()
+            self.lbl_visor_img.setText("📷\nSin Imagen")

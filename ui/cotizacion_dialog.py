@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, QMessageBox
 from database import SessionLocal
 import models
+import datetime
 
 class CotizacionDialog(QDialog):
     def __init__(self, parent=None):
@@ -38,12 +39,13 @@ class CotizacionDialog(QDialog):
 
     def cargar_cotizaciones_actuales(self):
         db = SessionLocal()
-        rates = {r.currency: r.rate_to_pyg for r in db.query(models.ExchangeRate).all()}
+        # Traer solo las activas
+        rates = {r.currency_code: r.buy_rate for r in db.query(models.CurrencyRate).filter_by(is_active=True).all()}
         db.close()
         
-        self.txt_usd.setText(str(rates.get("USD", 7500.0)))
-        self.txt_brl.setText(str(rates.get("BRL", 1500.0)))
-        self.txt_ars.setText(str(rates.get("ARS", 10.0)))
+        self.txt_usd.setText(f"{float(rates.get('USD', 7500.0)):.0f}")
+        self.txt_brl.setText(f"{float(rates.get('BRL', 1500.0)):.0f}")
+        self.txt_ars.setText(f"{float(rates.get('ARS', 10.0)):.0f}")
 
     def guardar_cotizacion(self):
         try:
@@ -53,31 +55,28 @@ class CotizacionDialog(QDialog):
             
             db = SessionLocal()
             
-            # Actualizar o crear Dólar
-            rate_usd = db.query(models.ExchangeRate).filter_by(currency="USD").first()
-            if not rate_usd:
-                rate_usd = models.ExchangeRate(currency="USD")
-                db.add(rate_usd)
-            rate_usd.rate_to_pyg = usd
-            
-            # Actualizar o crear Real
-            rate_brl = db.query(models.ExchangeRate).filter_by(currency="BRL").first()
-            if not rate_brl:
-                rate_brl = models.ExchangeRate(currency="BRL")
-                db.add(rate_brl)
-            rate_brl.rate_to_pyg = brl
-            
-            # Actualizar o crear Peso
-            rate_ars = db.query(models.ExchangeRate).filter_by(currency="ARS").first()
-            if not rate_ars:
-                rate_ars = models.ExchangeRate(currency="ARS")
-                db.add(rate_ars)
-            rate_ars.rate_to_pyg = ars
+            for code, rate in [("USD", usd), ("BRL", brl), ("ARS", ars)]:
+                # Chequear si cambió respecto a la actual
+                current = db.query(models.CurrencyRate).filter_by(currency_code=code, is_active=True).first()
+                if not current or float(current.buy_rate) != rate:
+                    # Desactivar anterior
+                    if current:
+                        current.is_active = False
+                    
+                    # Insertar nueva
+                    new_rate = models.CurrencyRate(
+                        currency_code=code,
+                        buy_rate=rate,
+                        sell_rate=rate,
+                        created_at=datetime.datetime.now(),
+                        is_active=True
+                    )
+                    db.add(new_rate)
             
             db.commit()
             db.close()
             
-            QMessageBox.information(self, "Éxito", "Cotizaciones guardadas correctamente en la base de datos.")
+            QMessageBox.information(self, "Éxito", "Cotizaciones guardadas correctamente.")
             self.accept()
         except ValueError:
             QMessageBox.warning(self, "Error", "Por favor ingresa valores numéricos válidos.")

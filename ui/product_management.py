@@ -7,12 +7,28 @@ from database import SessionLocal
 import models
 
 class ProductManagementDialog(QDialog):
+    def auto_format_thousands(self, text, line_edit):
+        if not text: return
+        clean_text = text.replace(",", "").replace(".", "")
+        if not clean_text.isdigit(): return
+        
+        formatted = f"{int(clean_text):,}"
+        if line_edit.text() != formatted:
+            cursor = line_edit.cursorPosition()
+            old_len = len(line_edit.text())
+            line_edit.blockSignals(True)
+            line_edit.setText(formatted)
+            line_edit.blockSignals(False)
+            new_len = len(formatted)
+            line_edit.setCursorPosition(cursor + (new_len - old_len))
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Gestión de Artículos (Supermercado)")
         self.resize(1000, 600)
         
         self.current_product_id = None
+        self.current_image_path = None
         
         main_layout = QVBoxLayout(self)
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -42,7 +58,10 @@ class ProductManagementDialog(QDialog):
         
         # TAB 1: General
         tab_general = QWidget()
-        form_layout = QFormLayout(tab_general)
+        general_main_layout = QHBoxLayout(tab_general)
+        
+        form_widget = QWidget()
+        form_layout = QFormLayout(form_widget)
         
         self.txt_codigo = QLineEdit()
         self.txt_cbarra = QLineEdit()
@@ -59,6 +78,7 @@ class ProductManagementDialog(QDialog):
         
         self.txt_location = QLineEdit()
         self.txt_costo = QLineEdit()
+        self.txt_costo.textChanged.connect(lambda t, le=self.txt_costo: self.auto_format_thousands(t, le))
         self.txt_preven = QLineEdit()
         self.txt_impu = QLineEdit("10.0")
         
@@ -81,6 +101,25 @@ class ProductManagementDialog(QDialog):
         form_layout.addRow("Stock Mínimo:", self.txt_stkmin)
         form_layout.addRow("Stock Máximo:", self.txt_stkmax)
         form_layout.addRow("", self.chk_active)
+        
+        photo_widget = QWidget()
+        photo_layout = QVBoxLayout(photo_widget)
+        
+        from PyQt6.QtWidgets import QLabel
+        self.lbl_product_photo = QLabel("Sin Foto")
+        self.lbl_product_photo.setFixedSize(150, 150)
+        self.lbl_product_photo.setStyleSheet("background-color: #eee; border: 1px solid #aaa;")
+        self.lbl_product_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.btn_take_photo = QPushButton("📸 Tomar Foto")
+        self.btn_take_photo.clicked.connect(self.open_camera)
+        
+        photo_layout.addWidget(self.lbl_product_photo)
+        photo_layout.addWidget(self.btn_take_photo)
+        photo_layout.addStretch()
+        
+        general_main_layout.addWidget(form_widget, stretch=1)
+        general_main_layout.addWidget(photo_widget)
         
         self.tabs.addTab(tab_general, "General")
         
@@ -181,9 +220,9 @@ class ProductManagementDialog(QDialog):
             self.txt_codigo.setText(prod.art_codigo)
             self.txt_cbarra.setText(prod.art_cbarra or "")
             self.txt_descri.setText(prod.art_descri)
-            self.txt_costo.setText(str(prod.art_costo))
-            self.txt_preven.setText(str(prod.art_preven))
-            self.txt_impu.setText(str(prod.art_impu))
+            self.txt_costo.setText(f"{float(prod.art_costo):g}")
+            self.txt_preven.setText(f"{float(prod.art_preven):.0f}")
+            self.txt_impu.setText(f"{float(prod.art_impu):g}")
             self.txt_stkini.setText(str(prod.art_stkini))
             self.txt_stkmin.setText(str(prod.art_stkmin))
             self.txt_stkmax.setText(str(prod.art_stkmax))
@@ -203,6 +242,20 @@ class ProductManagementDialog(QDialog):
             self.txt_location.setText(prod.location or "")
             
             self.txt_codigo.setReadOnly(True) 
+            
+            self.current_image_path = prod.image_path
+            if prod.image_path:
+                import os
+                from PyQt6.QtGui import QPixmap
+                if os.path.exists(prod.image_path):
+                    pixmap = QPixmap(prod.image_path)
+                    self.lbl_product_photo.setPixmap(pixmap.scaled(self.lbl_product_photo.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                else:
+                    self.lbl_product_photo.clear()
+                    self.lbl_product_photo.setText("Sin Foto")
+            else:
+                self.lbl_product_photo.clear()
+                self.lbl_product_photo.setText("Sin Foto")
             
             # Cargar Códigos Adicionales
             self.table_barcodes.setRowCount(0)
@@ -224,6 +277,10 @@ class ProductManagementDialog(QDialog):
         
     def clear_form(self):
         self.current_product_id = None
+        self.current_image_path = None
+        self.lbl_product_photo.clear()
+        self.lbl_product_photo.setText("Sin Foto")
+        
         self.txt_codigo.clear()
         self.txt_codigo.setReadOnly(False)
         self.txt_cbarra.clear()
@@ -282,6 +339,9 @@ class ProductManagementDialog(QDialog):
             prod.location = self.txt_location.text()
             prod.is_active = self.chk_active.isChecked()
             
+            if hasattr(self, 'current_image_path') and self.current_image_path:
+                prod.image_path = self.current_image_path
+            
             db.commit()
             QMessageBox.information(self, "Éxito", "Artículo guardado correctamente.")
             self.load_products()
@@ -293,3 +353,19 @@ class ProductManagementDialog(QDialog):
             QMessageBox.critical(self, "Error", str(e))
         finally:
             db.close()
+
+    def open_camera(self):
+        codigo = self.txt_codigo.text().strip()
+        if not codigo:
+            QMessageBox.warning(self, "Atención", "Debe ingresar un Código Interno primero para guardar la foto.")
+            self.txt_codigo.setFocus()
+            return
+            
+        from ui.camera_dialog import CameraDialog
+        dialog = CameraDialog(product_code=codigo, parent=self)
+        if dialog.exec():
+            if dialog.saved_image_path:
+                self.current_image_path = dialog.saved_image_path
+                from PyQt6.QtGui import QPixmap
+                pixmap = QPixmap(self.current_image_path)
+                self.lbl_product_photo.setPixmap(pixmap.scaled(self.lbl_product_photo.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))

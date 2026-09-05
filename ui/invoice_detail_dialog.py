@@ -76,7 +76,8 @@ class InvoiceDetailDialog(QDialog):
                 descri = item.product.art_descri if item.product else "Desconocido"
                 self.table.setItem(row, 1, QTableWidgetItem(descri))
                 
-                self.table.setItem(row, 2, QTableWidgetItem(str(item.vit_canti)))
+                canti_formateada = f"{float(item.vit_canti):g}"
+                self.table.setItem(row, 2, QTableWidgetItem(canti_formateada))
                 self.table.setItem(row, 3, QTableWidgetItem(f"{item.vit_precio:,.0f}"))
                 
         db.close()

@@ -1,0 +1,38 @@
+# REGLAS DE DESARROLLO - PROYECTO POS SUPERMERCADO (TRIPLE FRONTERA)
+
+## 1. Directivas de Stack Tecnológico
+- Frontend: Exclusivamente Python con PyQt6.
+- Base de Datos Local: SQLite (`stock_control.db`) mediante SQLAlchemy (ORM/Core).
+- Tipos de Datos Numéricos: PROHIBIDO usar `float` para montos, precios, subtotales o cantidades de balanza. Usar siempre `decimal.Decimal` con cuantización estricta.
+- Rendimiento de UI: No usar `QTableWidget` para la grilla de ventas de alto tráfico. Usar `QTableView` con `QAbstractTableModel`.
+
+## 2. Convenciones de Monedas y Redondeos
+- Moneda Base: Guaraní (`PYG`) sin decimales (`Decimal('1')`).
+- Monedas Secundarias: `USD`, `BRL`, `ARS` siempre con 2 decimales (`Decimal('0.01')`).
+- Cotizaciones: Cada cambio de tasa genera un registro nuevo inmutable en `currency_rates`. Nunca hacer UPDATE destructivo sobre tasas de turnos anteriores.
+- Fórmulas de IVA Paraguay:
+  * IVA 10%: `total / 11`
+  * IVA 5%: `total / 21`
+  * Exentas: `total` (IVA = 0)
+
+## 3. Integración con Hardware y Balanzas
+- Códigos de Balanza In-Store (EAN-13): Prefijo `20` o `21`.
+  * Estructura estándar: `PP CCCCC PPPP D` (PP=Prefijo, C=Código PLU de 5 dígitos, P=Peso/Precio de 5 dígitos, D=Dígito verificador).
+- Manejo de Puertos Serie (RS232) / Escáneres: Ejecutar lecturas continuas o pooling en hilos secundarios (`QThread`) para no congelar la UI de caja.
+
+## 4. Filosofía Offline-First y Resiliencia
+- Todas las operaciones de venta, cálculo y arqueo deben ejecutarse contra el SQLite local.
+- No bloquear transacciones si el servidor central o la red externa están caídos.
+- Las tablas transaccionales (`ventas`, `detalles`, `pagos`) deben incluir marcas de sincronización: `synced (bool)`, `sync_timestamp (datetime)` y `uuid` como identificador global.
+
+## 5. Estándar de Estructura de Respuesta
+En cada interacción de código o arquitectura, estructurar la salida en:
+1. [Implementación Técnica]
+2. [Validación Frontera]
+3. [Propuestas de Mejora Progresiva]
+4. [Próximo Paso]
+
+### Skill: validator
+- **Ruta**: `.agents/skills/validator/validator.py`
+- **Uso obligatorio**: Todo flujo debe pasar por `POSGuardrail.validate_sale_item()` antes de registrar ventas o alterar stock en `stock_control.db`.
+- **Regla Estricta**: No usar `float`. Toda operación aritmética con stock o precios se debe realizar exclusivamente con `decimal.Decimal`.
