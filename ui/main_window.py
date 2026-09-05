@@ -12,6 +12,12 @@ import ean13_parser
 from ui.ventas_table_model import VentasTableModel
 from ui.sync_worker import SyncWorker
 
+def _safe_dec(v):
+    from decimal import Decimal
+    if v is None: return Decimal('0')
+    if isinstance(v, Decimal): return v
+    return Decimal(str(v).replace(',', '.'))
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -104,7 +110,6 @@ class MainWindow(QMainWindow):
         scanner_layout.addWidget(QLabel("Código de Barras / Artículo:"))
         self.txt_codigo = QLineEdit()
         self.txt_codigo.setPlaceholderText("Escanee el código de barras y presione ENTER")
-        self.txt_codigo.textChanged.connect(lambda t, le=self.txt_codigo: self.auto_format_thousands(t, le))
         self.txt_codigo.returnPressed.connect(self.buscar_producto)
         scanner_layout.addWidget(self.txt_codigo, stretch=1)
         

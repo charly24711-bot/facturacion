@@ -325,10 +325,10 @@ class ProductManagementDialog(QDialog):
                 
             prod.art_cbarra = self.txt_cbarra.text()
             prod.art_descri = descri
-            prod.art_costo = float(self.txt_costo.text() or 0)
-            prod.art_preven = float(self.txt_preven.text() or 0)
-            prod.art_impu = float(self.txt_impu.text() or 10.0)
-            prod.art_stkini = float(self.txt_stkini.text() or 0)
+            prod.art_costo = float(str(self.txt_costo.text()).replace(',', '') or 0)
+            prod.art_preven = float(str(self.txt_preven.text()).replace(',', '') or 0)
+            prod.art_impu = float(str(self.txt_impu.text()).replace(',', '') or 10.0)
+            prod.art_stkini = float(str(self.txt_stkini.text()).replace(',', '') or 0)
             prod.art_stkmin = int(self.txt_stkmin.text() or 10)
             prod.art_stkmax = int(self.txt_stkmax.text() or 200)
             

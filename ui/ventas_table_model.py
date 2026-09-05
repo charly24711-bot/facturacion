@@ -10,7 +10,7 @@ import tax_calculator
 from PyQt6.QtCore import pyqtSignal
 
 class VentasTableModel(QAbstractTableModel):
-    qty_changed_for_tier = pyqtSignal(int, float)
+    qty_changed_for_tier = pyqtSignal(int, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -62,7 +62,7 @@ class VentasTableModel(QAbstractTableModel):
             # Solo permitimos editar la Cantidad (columna 4)
             if col == 4:
                 try:
-                    nueva_cantidad = float(value)
+                    nueva_cantidad = Decimal(str(value))
                     self.items[row]['cantidad'] = nueva_cantidad
                     self.qty_changed_for_tier.emit(row, nueva_cantidad)
                     self._recalcular_fila(row)
@@ -79,12 +79,12 @@ class VentasTableModel(QAbstractTableModel):
         return default_flags
 
     def add_item(self, product, cantidad=1.0, precio_override=None, promo_label=None):
-        precio_final = precio_override if precio_override is not None else float(product.art_preven or 0)
+        precio_final = precio_override if precio_override is not None else Decimal(str(product.art_preven or 0))
         
         # Si ya existe el producto, incrementamos cantidad
         for idx, item in enumerate(self.items):
             if item['codigo'] == product.art_codigo:
-                self.items[idx]['cantidad'] += float(cantidad)
+                self.items[idx]['cantidad'] += Decimal(str(cantidad))
                 self.items[idx]['precio'] = precio_final
                 
                 # Update promo label
@@ -111,7 +111,7 @@ class VentasTableModel(QAbstractTableModel):
         nuevo_item = {
             'codigo': product.art_codigo,
             'descripcion': descri,
-            'cantidad': float(cantidad),
+            'cantidad': Decimal(str(cantidad)),
             'precio': precio_final,
             'impuesto_porc': int(product.art_impu),
             'total': 0.0,
