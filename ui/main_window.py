@@ -432,25 +432,37 @@ class MainWindow(QMainWindow):
     def cargar_historial_ventas(self):
         from database import SessionLocal
         import models
+        from datetime import datetime, time
         db = SessionLocal()
         
-        # Últimas 50 facturas
-        facturas = db.query(models.Invoice).order_by(models.Invoice.id.desc()).limit(50).all()
+        # Ventas del día actual, orden cronológico (ascendente)
+        today_start = datetime.combine(datetime.today(), time.min)
+        facturas = db.query(models.Invoice).filter(models.Invoice.ven_fecha >= today_start).order_by(models.Invoice.id.asc()).limit(200).all()
         
+        self.table_historial.setSortingEnabled(False)
         self.table_historial.setRowCount(0)
         for row, fac in enumerate(facturas):
             self.table_historial.insertRow(row)
-            self.table_historial.setItem(row, 0, QTableWidgetItem(str(fac.id)))
+            
+            # Usar QTableWidgetItem numérico para permitir ordenamiento correcto si se hace clic
+            item_nro = QTableWidgetItem()
+            item_nro.setData(Qt.ItemDataRole.DisplayRole, fac.id)
+            self.table_historial.setItem(row, 0, item_nro)
+            
             self.table_historial.setItem(row, 1, QTableWidgetItem(fac.ven_fecha.strftime("%H:%M")))
             
             cliente_nombre = fac.client.cli_nombre if fac.client else "CONSUMIDOR FINAL"
             self.table_historial.setItem(row, 2, QTableWidgetItem(cliente_nombre))
             
-            self.table_historial.setItem(row, 3, QTableWidgetItem(f"{fac.ven_total:,.0f}"))
+            item_total = QTableWidgetItem()
+            item_total.setData(Qt.ItemDataRole.DisplayRole, int(fac.ven_total))
+            self.table_historial.setItem(row, 3, item_total)
+            
             self.table_historial.setItem(row, 4, QTableWidgetItem(f"{fac.id}/1"))
             
             self.table_historial.item(row, 0).setData(Qt.ItemDataRole.UserRole, fac.id)
             
+        self.table_historial.setSortingEnabled(True)
         db.close()
         
     def ver_detalle_factura(self, item):

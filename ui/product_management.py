@@ -262,7 +262,7 @@ class ProductManagementDialog(QDialog):
             for r, bc in enumerate(prod.barcodes):
                 self.table_barcodes.insertRow(r)
                 self.table_barcodes.setItem(r, 0, QTableWidgetItem(bc.barcode))
-                self.table_barcodes.setItem(r, 1, QTableWidgetItem(str(bc.factor_conversion)))
+                self.table_barcodes.setItem(r, 1, QTableWidgetItem(f"{float(bc.factor_conversion or 0):g}"))
                 
             # Cargar Lotes
             self.table_batches.setRowCount(0)
@@ -271,7 +271,7 @@ class ProductManagementDialog(QDialog):
                 self.table_batches.setItem(r, 0, QTableWidgetItem(bt.lote))
                 venc = bt.fecha_vencimiento.strftime("%d/%m/%Y") if bt.fecha_vencimiento else "Sin fecha"
                 self.table_batches.setItem(r, 1, QTableWidgetItem(venc))
-                self.table_batches.setItem(r, 2, QTableWidgetItem(str(bt.stock_actual)))
+                self.table_batches.setItem(r, 2, QTableWidgetItem(f"{float(bt.stock_actual or 0):g}"))
                 
         db.close()
         

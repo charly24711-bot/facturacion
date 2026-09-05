@@ -45,7 +45,8 @@ class ClientManagementDialog(QDialog):
         self.txt_ci = QLineEdit()
         self.txt_direcc = QLineEdit()
         self.txt_telefo = QLineEdit()
-        self.txt_limite = QLineEdit("0.0")
+        self.txt_limite = QLineEdit("0")
+        self.txt_limite.textChanged.connect(lambda t, le=self.txt_limite: self.auto_format_thousands(t, le))
         
         self.cmb_price_list = QComboBox()
         self.cmb_price_list.addItem("— Sin Lista Especial —", None)
@@ -137,7 +138,7 @@ class ClientManagementDialog(QDialog):
             self.txt_ci.setText(cli.cli_ci)
             self.txt_direcc.setText(cli.cli_direcc)
             self.txt_telefo.setText(cli.cli_telefo)
-            self.txt_limite.setText(str(cli.cli_limite))
+            self.txt_limite.setText(f"{int(cli.cli_limite or 0):,}")
             
             idx = self.cmb_price_list.findData(cli.price_list_id)
             if idx >= 0:
@@ -192,7 +193,7 @@ class ClientManagementDialog(QDialog):
             cli.cli_ci = self.txt_ci.text()
             cli.cli_direcc = self.txt_direcc.text()
             cli.cli_telefo = self.txt_telefo.text()
-            cli.cli_limite = float(self.txt_limite.text() or 0.0)
+            cli.cli_limite = float(str(self.txt_limite.text()).replace(',', '') or 0.0)
             
             db.commit()
             QMessageBox.information(self, "Éxito", "Cliente guardado correctamente.")
@@ -227,3 +228,31 @@ class ClientManagementDialog(QDialog):
                 QMessageBox.critical(self, "Error", "No se pudo eliminar el cliente. Es posible que tenga facturas asociadas.")
             finally:
                 db.close()
+        
+    def auto_format_thousands(self, text, line_edit):
+        """Format number with commas dynamically while typing."""
+        line_edit.blockSignals(True)
+        cursor_pos = line_edit.cursorPosition()
+        
+        # Guardar longitud original para ajustar cursor
+        old_len = len(text)
+        
+        # Eliminar todo excepto dígitos
+        clean_text = ''.join(c for c in text if c.isdigit())
+        
+        if clean_text:
+            try:
+                # Formatear con comas
+                formatted = f"{int(clean_text):,}"
+                line_edit.setText(formatted)
+                
+                # Ajustar posición del cursor
+                new_len = len(formatted)
+                new_cursor_pos = cursor_pos + (new_len - old_len)
+                line_edit.setCursorPosition(max(0, new_cursor_pos))
+            except ValueError:
+                pass
+        else:
+            line_edit.setText("")
+            
+        line_edit.blockSignals(False)

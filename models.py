@@ -67,9 +67,9 @@ class Product(Base):
     art_preven = Column(Numeric(asdecimal=True), default=0.0) 
     art_codmnd = Column(String(2)) 
     art_impu = Column(Numeric(asdecimal=True), default=10.0) 
-    art_stkmin = Column(Integer, default=10)
-    art_stkmax = Column(Integer, default=200)
-    art_stkini = Column(Integer, default=0) 
+    art_stkmin = Column(Numeric(asdecimal=True), default=10)
+    art_stkmax = Column(Numeric(asdecimal=True), default=200)
+    art_stkini = Column(Numeric(asdecimal=True), default=0) 
     
     # Nuevos campos de Supermercado
     category_id = Column(Integer, ForeignKey('categories.id'), nullable=True)

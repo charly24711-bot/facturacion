@@ -214,8 +214,8 @@ class PaymentDialog(QDialog):
             
             self.table_pagos.setItem(row, 0, QTableWidgetItem(moneda))
             self.table_pagos.setItem(row, 1, QTableWidgetItem(metodo))
-            self.table_pagos.setItem(row, 2, QTableWidgetItem(f"{monto_origen:,.2f}"))
-            self.table_pagos.setItem(row, 3, QTableWidgetItem(f"{tasa_compra:,.2f}"))
+            self.table_pagos.setItem(row, 2, QTableWidgetItem(f"{monto_origen:,.2f}".replace(".00", "")))
+            self.table_pagos.setItem(row, 3, QTableWidgetItem(f"{tasa_compra:,.2f}".replace(".00", "")))
             self.table_pagos.setItem(row, 4, QTableWidgetItem(f"{monto_pyg:,.0f}"))
             
             self.txt_monto.clear()
