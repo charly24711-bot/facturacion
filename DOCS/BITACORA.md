@@ -75,10 +75,27 @@
 - **Motor de Escalas de Precio Mayorista:** Verificación automática de precios por volumen (Minorista, Mayorista x 6, Distribuidor x 12).
 - **Arqueo Ciego con Discrepancias Reales:** Auditoría de fin de turno simulando faltante en PYG (-Gs. 20.000), sobrante en BRL (+R$ 20.00) y cuadre exacto en USD (US$ 0.00), grabados inmutablemente en `models.CashAudit`.
 
+### 10. Suite Comercial 360° para Supermercados (Fases 1, 2 y 3)
+- **Fase 1 - Ergonomía POS y Operaciones de Caja:**
+  * Selector reactivo de Canales de Precios en vivo (`cmb_canal_precio`) con jerarquía: Promoción > Escala Tier > Canal Seleccionado > Lista Cliente > Minorista Base.
+  * Quitar ítem del carrito con `[Supr] / Delete` y recálculo instantáneo de IVA y totales.
+  * Cancelar venta en curso con `[F9]` y confirmación rápida.
+  * Movimientos de Caja / Sangría (`ui/caja_movimiento_dialog.py`) con ticket impreso y registro en `CashMovement`.
+  * Arqueo ciego integrando fondo fijo y sangrías para calcular el efectivo neto real.
+- **Fase 2 - Módulos Administrativos del Back-Office:**
+  * Gestión visual de usuarios y cajeros (`ui/users_management_dialog.py`) con roles `ADMIN`, `GERENTE`, `CAJERO` y hash SHA-256.
+  * Registro y control de mermas, roturas y ajustes de inventario (`ui/stock_adjustment_dialog.py`) con afectación atómica de `art_stkini`.
+  * Exportador Oficial Tributario DNIT Hechauka / Marangatú (`ui/hechauka_export_dialog.py`) para Libros de Ventas y Compras con IVA 10% (`total / 11`) e IVA 5% (`total / 21`).
+- **Fase 3 - Utilidades de Góndola y Seguridad:**
+  * Generador de códigos de barras vectoriales EAN-13 y Code-128 (`ui/barcode_renderer.py`).
+  * Impresor de etiquetas de góndola adhesivas A4 (14 y 24 etiquetas) y rollos térmicos (`ui/shelf_labels_dialog.py`) con precio destacado en PYG y USD, vista previa y exportación directa a PDF.
+  * Bloqueo y pausa de terminal POS con PIN y teclado numérico táctil (`ui/lock_screen_dialog.py`), atajo `[F12]`, cronómetro en vivo y rescate por supervisor.
+
 ---
 
 ## 📊 Resumen de Estado Actual del Repositorio
 - **Framework UI:** PyQt6 con modelo MVC (`QTableView` + `QAbstractTableModel`).
 - **Base de Datos:** SQLite (`stock_control.db`) con SQLAlchemy ORM.
 - **Aritmética Financiera:** 100% `decimal.Decimal` con cuantización estricta (prohibido `float`).
-- **Tests Automatizados:** 100% superados (`test_stress_integral_360.py`, `test_riguroso_panel_admin.py`, `test_auth_admin.py`, `test_flujo_presupuesto.py`, `test_flujo_completo_pos.py`, `test_ruc_integration.py`, `test_cobro_ruc_ticket.py`).
+- **Tests Automatizados:** 100% superados (`test_fase1_pos_ergonomia.py` (27/27), `test_fase2_backoffice.py` (31/31), `test_fase3_gondola_seguridad.py` (14/14), `test_stress_integral_360.py`, `test_riguroso_panel_admin.py`, etc.).
+

@@ -320,6 +320,10 @@ class MainWindow(QMainWindow):
         btn_f10 = QPushButton("📊 [F10] Caja")
         btn_f10.setStyleSheet("background-color: #fff3e0; color: #e65100; font-weight: bold; padding: 4px; font-size: 10px;")
         btn_f10.clicked.connect(self.open_reporte_z)
+
+        btn_f12 = QPushButton("⏸️ [F12] Pausa")
+        btn_f12.setStyleSheet("background-color: #f1f5f9; color: #1e293b; font-weight: bold; padding: 4px; font-size: 10px;")
+        btn_f12.clicked.connect(self.pausar_terminal)
         
         shortcuts_layout.addWidget(btn_f2)
         shortcuts_layout.addWidget(btn_f5)
@@ -327,6 +331,7 @@ class MainWindow(QMainWindow):
         shortcuts_layout.addWidget(btn_f8)
         shortcuts_layout.addWidget(btn_f9)
         shortcuts_layout.addWidget(btn_f10)
+        shortcuts_layout.addWidget(btn_f12)
         fiscal_layout.addLayout(shortcuts_layout)
         
         bottom_panel_layout.addWidget(panel_fiscal)
@@ -457,15 +462,23 @@ class MainWindow(QMainWindow):
             self.cancelar_venta_actual()
         elif event.key() == Qt.Key.Key_F10:
             self.open_reporte_z()
-        elif event.key() in (Qt.Key.Key_F11, Qt.Key.Key_F12):
+        elif event.key() == Qt.Key.Key_F11:
             self.procesar_factura()
+        elif event.key() == Qt.Key.Key_F12:
+            self.pausar_terminal()
         elif event.key() == Qt.Key.Key_Delete:
             self.quitar_item_seleccionado()
         else:
             super().keyPressEvent(event)
-            
 
-                
+    def pausar_terminal(self):
+        """Pausa y bloquea la terminal POS resguardando los datos de venta en pantalla."""
+        from ui.lock_screen_dialog import LockScreenDialog
+        dialog = LockScreenDialog(self.current_user, self)
+        dialog.exec()
+        if getattr(dialog, 'logout_requested', False):
+            self.close()
+
     def procesar_factura(self):
         if self.ventas_model.rowCount() == 0:
             return

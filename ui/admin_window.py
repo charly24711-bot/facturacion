@@ -168,6 +168,8 @@ class AdminWindow(QMainWindow):
             ("🔑 Usuarios y Cajeros [F2]", 9),
             ("🗑️ Mermas y Ajustes Inv. [F4]", 10),
             ("📊 Exportar DNIT Hechauka [F6]", 11),
+            # ─── FASE 3 ────────────────────────────────────────────────────
+            ("🏷️ Etiquetas de Góndola [F3]", 12),
         ]
 
         for text, idx in menu_items:
@@ -655,6 +657,13 @@ class AdminWindow(QMainWindow):
         dlg = HechaukaExportDialog(current_user=self.current_user, parent=self)
         dlg.exec()
 
+    # ─── FASE 3: Utilidades de Góndola ───────────────────────────────────────
+    def abrir_etiquetas(self):
+        """Impresión de Etiquetas de Góndola y Códigos de Barras [F3]"""
+        from ui.shelf_labels_dialog import ShelfLabelsDialog
+        dlg = ShelfLabelsDialog(parent=self)
+        dlg.exec()
+
     def cerrar_sesion(self):
         reply = QMessageBox.question(
             self, "Cerrar Sesión", "¿Está seguro que desea salir del Panel Administrativo?",
@@ -854,6 +863,8 @@ class AdminWindow(QMainWindow):
             self.abrir_pos()
         elif event.key() == Qt.Key.Key_F2:
             self.abrir_usuarios()
+        elif event.key() == Qt.Key.Key_F3:
+            self.abrir_etiquetas()
         elif event.key() == Qt.Key.Key_F4:
             self.abrir_mermas()
         elif event.key() == Qt.Key.Key_F5:
@@ -878,6 +889,7 @@ class AdminWindow(QMainWindow):
             9: self.abrir_usuarios,
             10: self.abrir_mermas,
             11: self.abrir_hechauka,
+            12: self.abrir_etiquetas,
         }
         fn = HANDLERS.get(row_idx)
         if fn:
