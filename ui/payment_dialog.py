@@ -75,11 +75,13 @@ class PaymentDialog(QDialog):
         
         btn_buscar_cli = QPushButton("🔍 Buscar [F8]")
         btn_buscar_cli.setStyleSheet("background-color: #0288d1; color: white; font-weight: bold; padding: 4px 8px;")
+        btn_buscar_cli.setAutoDefault(False)
         btn_buscar_cli.clicked.connect(self.abrir_busqueda_cliente)
         layout_cli.addWidget(btn_buscar_cli, 0, 2)
         
         btn_cf = QPushButton("👤 Consumidor Final")
         btn_cf.setStyleSheet("background-color: #607d8b; color: white; font-weight: bold; padding: 4px 8px;")
+        btn_cf.setAutoDefault(False)
         btn_cf.clicked.connect(self.set_consumidor_final)
         layout_cli.addWidget(btn_cf, 0, 3)
         
@@ -119,6 +121,7 @@ class PaymentDialog(QDialog):
         
         btn_add = QPushButton("Agregar Pago")
         btn_add.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
+        btn_add.setAutoDefault(False)
         btn_add.clicked.connect(self.agregar_pago)
         
         layout_ingreso.addWidget(QLabel("Moneda:"))
@@ -140,6 +143,7 @@ class PaymentDialog(QDialog):
         main_layout.addWidget(self.table_pagos)
         
         btn_eliminar_pago = QPushButton("Eliminar Pago Seleccionado")
+        btn_eliminar_pago.setAutoDefault(False)
         btn_eliminar_pago.clicked.connect(self.eliminar_pago)
         main_layout.addWidget(btn_eliminar_pago, alignment=Qt.AlignmentFlag.AlignRight)
         
@@ -185,11 +189,14 @@ class PaymentDialog(QDialog):
         btn_layout = QHBoxLayout()
         self.btn_cobrar = QPushButton("Confirmar Factura [Enter]")
         self.btn_cobrar.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 15px; font-size: 16px;")
+        self.btn_cobrar.setAutoDefault(True)
+        self.btn_cobrar.setDefault(False)
         self.btn_cobrar.clicked.connect(self.procesar_cobro)
         self.btn_cobrar.setEnabled(False)
         
         btn_cancelar = QPushButton("Cancelar [Esc]")
         btn_cancelar.setStyleSheet("padding: 15px; font-size: 16px;")
+        btn_cancelar.setAutoDefault(False)
         btn_cancelar.clicked.connect(self.reject)
         
         btn_layout.addWidget(btn_cancelar)
@@ -262,9 +269,11 @@ class PaymentDialog(QDialog):
             self.table_pagos.setItem(row, 4, QTableWidgetItem(f"{monto_pyg:,.0f}"))
             
             self.txt_monto.clear()
-            self.txt_monto.setFocus()
-            
             self.actualizar_saldos()
+            if self.btn_cobrar.isEnabled():
+                self.btn_cobrar.setFocus()
+            else:
+                self.txt_monto.setFocus()
             
         except Exception as e:
             QMessageBox.warning(self, "Error", "Monto inválido.")
@@ -290,11 +299,13 @@ class PaymentDialog(QDialog):
             self.lbl_vuelto_pyg.setText("0")
             self.lbl_vuelto_final.setText("0")
             self.btn_cobrar.setEnabled(False)
+            self.btn_cobrar.setDefault(False)
         else:
             self.lbl_faltante.setText("0")
             vuelto_pyg = abs(faltante)
             self.lbl_vuelto_pyg.setText(f"{vuelto_pyg:,.0f}")
             self.btn_cobrar.setEnabled(True)
+            self.btn_cobrar.setDefault(True)
             
             # Vuelto Cruzado
             moneda_vuelto = self.combo_vuelto_moneda.currentText()
@@ -453,3 +464,30 @@ class PaymentDialog(QDialog):
         self.resolver_cliente_final()
         self.payment_successful = True
         self.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+        elif event.key() == Qt.Key.Key_F8:
+            self.abrir_busqueda_cliente()
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            # Si el foco está en el campo de monto, procesar agregar pago
+            if self.txt_monto.hasFocus():
+                self.agregar_pago()
+                event.accept()
+                return
+            # Si el foco está en el RUC, consultar RUC
+            elif self.txt_cliente_ruc.hasFocus():
+                self.consultar_ruc_cliente()
+                event.accept()
+                return
+            # Si la factura ya está saldada y el botón de cobrar está activo, confirmar venta
+            elif self.btn_cobrar.isEnabled():
+                self.procesar_cobro()
+                event.accept()
+                return
+            else:
+                event.accept()
+                return
+        else:
+            super().keyPressEvent(event)
