@@ -189,6 +189,11 @@ def run_stress_suite_360():
         db.commit()
         db.refresh(cliente_cc)
 
+    # Limpiar transacciones previas del cliente de test para idempotencia
+    db.query(models.CustomerTransaction).filter_by(client_id=cliente_cc.id).delete()
+    db.commit()
+    db.refresh(cliente_cc)
+
     limite = Decimal(str(cliente_cc.cli_limite))
     saldo_actual = Decimal('0')
     cargos_aprobados = 0
@@ -316,6 +321,10 @@ def run_stress_suite_360():
     db.add(sesion_stress)
     db.commit()
     db.refresh(sesion_stress)
+
+    # Limpiar pagos previos de test para idempotencia
+    db.query(models.Payment).filter(models.Payment.cob_numero.in_([990001, 990002, 990003])).delete()
+    db.commit()
 
     # Registrar cobranzas multidivisa en la sesión
     # 1. Pago PYG: 500.000

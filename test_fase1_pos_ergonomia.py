@@ -27,6 +27,15 @@ import models
 # FIXTURES
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@pytest.fixture(scope="session")
+def qapp():
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+    return app
+
+
 @pytest.fixture(scope="module")
 def db():
     """Sesión de base de datos compartida para el módulo."""
@@ -408,6 +417,35 @@ class TestReglasNoFloat:
         monto = Decimal("50.1")
         quantizado = monto.quantize(Decimal("0.01"))
         assert quantizado == Decimal("50.10")
+
+
+class TestPaymentDialogErgonomia:
+
+    def test_botones_secundarios_sin_autodefault(self, qapp):
+        """Los botones secundarios no deben tener autoDefault para no activarse con Enter."""
+        from ui.payment_dialog import PaymentDialog
+        from PyQt6.QtWidgets import QPushButton
+        dlg = PaymentDialog({'PYG': Decimal('50000')})
+        
+        # Ningún botón auxiliar debe tener autoDefault activado al inicio
+        for btn in dlg.findChildren(QPushButton):
+            if btn != dlg.btn_cobrar:
+                assert not btn.autoDefault(), f"El botón {btn.text()} no debe tener autoDefault activado"
+
+    def test_enter_en_monto_no_dispara_busqueda_cliente(self, qapp):
+        """Presionar Enter en el campo de monto no debe abrir la búsqueda de clientes."""
+        from ui.payment_dialog import PaymentDialog
+        dlg = PaymentDialog({'PYG': Decimal('50000')})
+        
+        cliente_abierto = []
+        dlg.abrir_busqueda_cliente = lambda: cliente_abierto.append(True)
+        
+        dlg.txt_monto.setText("50000")
+        dlg.agregar_pago()
+        
+        assert len(cliente_abierto) == 0, "No debe abrirse la búsqueda de clientes al ingresar el monto"
+        assert dlg.btn_cobrar.isEnabled() is True
+        assert dlg.btn_cobrar.isDefault() is True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
