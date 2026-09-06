@@ -38,6 +38,12 @@ def generate_mock_data():
     
     print("[*] Iniciando Carga Masiva...")
     
+    # Check if mock data already exists
+    if db.query(models.Supplier).filter_by(sup_codigo="PRV-1000").first():
+        print("[!] Los datos de prueba ya existen en la base de datos.")
+        print("[!] Si desea volver a generarlos, por favor borre el archivo 'stock_control.db' o use una base de datos limpia.")
+        return
+    
     # 1. Crear 50 Proveedores
     print("[1/5] Creando 50 Proveedores...")
     proveedores_ids = []
@@ -128,7 +134,7 @@ def generate_mock_data():
             total_compra += subtotal
             
             # Sumar stock y crear lote
-            p.art_stkini = float(Decimal(str(p.art_stkini or 0)) + qty)
+            p.art_stkini = Decimal(str(p.art_stkini or 0)) + qty
             lote = models.ProductBatch(
                 product_id=p.id,
                 lote=f"LT-{random.randint(1000,9999)}",
@@ -183,14 +189,14 @@ def generate_mock_data():
         
         for item in items_validos:
             db.add(models.InvoiceItem(
-                vit_numero=factura.id,
+                vit_numero=factura.ven_numero,
                 vit_articu=item["plu_code"],
                 vit_canti=item["quantity"],
                 vit_precio=item["unit_price"]
             ))
             # Restar stock
             prod_db = db.query(models.Product).filter_by(art_codigo=item["plu_code"]).first()
-            prod_db.art_stkini = float(Decimal(str(prod_db.art_stkini)) - item["quantity"])
+            prod_db.art_stkini = Decimal(str(prod_db.art_stkini)) - item["quantity"]
             
         db.commit()
 
@@ -225,7 +231,7 @@ def generate_mock_data():
         
         if status.is_valid:
             db.add(models.InvoiceItem(
-                vit_numero=nc.id,
+                vit_numero=nc.ven_numero,
                 vit_articu=status.clean_data["plu_code"],
                 vit_canti=status.clean_data["quantity"],
                 vit_precio=status.clean_data["unit_price"]
@@ -234,10 +240,30 @@ def generate_mock_data():
             
             # Reintegrar stock
             prod_db = db.query(models.Product).filter_by(art_codigo=item_a_devolver.vit_articu).first()
-            prod_db.art_stkini = float(Decimal(str(prod_db.art_stkini)) + status.clean_data["quantity"])
+            prod_db.art_stkini = Decimal(str(prod_db.art_stkini)) + status.clean_data["quantity"]
             
         nc.ven_total = total_nc
     
+    # 6. Sembrar Monedas y Cotizaciones
+    print("[+] Sembrando Monedas y Cotizaciones Base...")
+    for cur_code, cur_name, cur_sym, cur_dec, cur_base in [
+        ("PYG", "Guaraní", "Gs", 0, True),
+        ("USD", "Dólar Americano", "US$", 2, False),
+        ("BRL", "Real Brasileño", "R$", 2, False),
+        ("ARS", "Peso Argentino", "$", 2, False),
+    ]:
+        if not db.query(models.Currency).filter_by(code=cur_code).first():
+            db.add(models.Currency(
+                code=cur_code, name=cur_name, symbol=cur_sym, decimals=cur_dec, is_base=cur_base
+            ))
+    db.flush()
+
+    for code, val in [("USD", Decimal('7500')), ("BRL", Decimal('1500')), ("ARS", Decimal('10'))]:
+        if not db.query(models.CurrencyRate).filter_by(currency_code=code, is_active=True).first():
+            db.add(models.CurrencyRate(
+                currency_code=code, buy_rate=val, sell_rate=val, is_active=True
+            ))
+
     db.commit()
     db.close()
     

@@ -8,14 +8,17 @@ class ValidationStatus(NamedTuple):
     clean_data: Dict[str, Any]
 
 def to_decimal(val: Any, default: str = "0") -> Decimal:
-    """Convierte de forma segura strings, floats o ints a Decimal puro."""
+    """Convierte de forma segura strings, floats o ints a Decimal puro, normalizando ceros residuales de DB."""
     if val is None:
         return Decimal(default)
-    if isinstance(val, Decimal):
-        return val
     try:
-        clean_str = str(val).strip().replace(",", ".")
-        return Decimal(clean_str)
+        if isinstance(val, Decimal):
+            dec = val.normalize()
+        else:
+            clean_str = str(val).strip().replace(",", ".")
+            dec = Decimal(clean_str).normalize()
+        # Evitar notación científica si dec == 0
+        return Decimal("0") if dec == Decimal("0") else dec
     except (InvalidOperation, ValueError):
         return Decimal(default)
 

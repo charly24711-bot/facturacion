@@ -1,6 +1,6 @@
 import sys
 import os
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from PyQt6.QtCore import QAbstractTableModel, Qt, QModelIndex
 
 # Importar Skill de Impuestos
@@ -41,8 +41,10 @@ class VentasTableModel(QAbstractTableModel):
             if col == 1: return item['codigo']
             if col == 2: return item['descripcion']
             if col == 3: return "DC"
-            if col == 4: return f"{float(item['cantidad']):g}"
-            if col == 5: return str(item['impuesto_porc'])
+            if col == 4:
+                cant_str = f"{item['cantidad']:.3f}".rstrip('0').rstrip('.') if '.' in str(item['cantidad']) else str(item['cantidad'])
+                return cant_str
+            if col == 5: return f"{item['impuesto_porc']}%"
             if col == 6: return f"{item['iva_monto']:,.0f}"
             if col == 7: return f"{item['precio']:,.0f}"
             if col == 8: return f"{item['total']:,.0f}"
@@ -50,6 +52,8 @@ class VentasTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.TextAlignmentRole:
             if col in [4, 6, 7, 8]:
                 return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            if col in [0, 3, 5]:
+                return Qt.AlignmentFlag.AlignCenter
             return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
 
         return None
@@ -68,7 +72,7 @@ class VentasTableModel(QAbstractTableModel):
                     self._recalcular_fila(row)
                     self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
                     return True
-                except ValueError:
+                except (ValueError, InvalidOperation):
                     return False
         return False
 
@@ -78,7 +82,7 @@ class VentasTableModel(QAbstractTableModel):
             return default_flags | Qt.ItemFlag.ItemIsEditable
         return default_flags
 
-    def add_item(self, product, cantidad=1.0, precio_override=None, promo_label=None):
+    def add_item(self, product, cantidad=Decimal('1'), precio_override=None, promo_label=None):
         precio_final = precio_override if precio_override is not None else Decimal(str(product.art_preven or 0))
         
         # Si ya existe el producto, incrementamos cantidad
@@ -114,8 +118,8 @@ class VentasTableModel(QAbstractTableModel):
             'cantidad': Decimal(str(cantidad)),
             'precio': precio_final,
             'impuesto_porc': int(product.art_impu),
-            'total': 0.0,
-            'iva_monto': 0.0
+            'total': Decimal('0'),
+            'iva_monto': Decimal('0')
         }
         
         self.beginInsertRows(QModelIndex(), self.rowCount(), self.rowCount())
@@ -143,11 +147,11 @@ class VentasTableModel(QAbstractTableModel):
         # Desglose impositivo según Paraguay
         res = tax_calculator.calcular_iva_linea(Decimal(str(total)), item['impuesto_porc'])
         if item['impuesto_porc'] == 10:
-            item['iva_monto'] = float(res['iva_10'])
+            item['iva_monto'] = Decimal(str(res['iva_10']))
         elif item['impuesto_porc'] == 5:
-            item['iva_monto'] = float(res['iva_5'])
+            item['iva_monto'] = Decimal(str(res['iva_5']))
         else:
-            item['iva_monto'] = 0.0
+            item['iva_monto'] = Decimal('0')
 
     def clear(self):
         self.beginResetModel()

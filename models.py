@@ -1,9 +1,21 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Numeric, event
 from sqlalchemy.orm import relationship, declared_attr
 from database import Base
+from decimal import Decimal
 import datetime
 import uuid
 import json
+import hashlib
+
+def hash_password(password: str) -> str:
+    """Genera hash SHA-256 seguro para contraseñas."""
+    if not password:
+        return ""
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verifica si una contraseña en texto plano coincide con el hash SHA-256."""
+    return hash_password(plain_password) == hashed_password
 
 class SyncableModel:
     @declared_attr
@@ -17,6 +29,11 @@ class SyncableModel:
     @declared_attr
     def synced_at(cls):
         return Column(DateTime, nullable=True)
+
+    @declared_attr
+    def sync_timestamp(cls):
+        from sqlalchemy.orm import synonym
+        return synonym('synced_at')
 
 class SyncOutbox(Base):
     __tablename__ = 'sync_outbox'
@@ -133,6 +150,15 @@ class CustomerTransaction(SyncableModel, Base):
     
     client = relationship("Client", back_populates="transactions")
 
+class TaxpayerRegistry(Base):
+    """Padrón de Contribuyentes DNIT (RUC, Razón Social, DV) para búsqueda offline instantánea"""
+    __tablename__ = 'padron_ruc'
+    id = Column(Integer, primary_key=True, index=True)
+    ruc = Column(String(15), unique=True, index=True, nullable=False)
+    dv = Column(String(1), nullable=False)
+    razon_social = Column(String(150), nullable=False, index=True)
+    estado = Column(String(1), default='A') # A=Activo, B=Bloqueado, C=Cancelado
+
 class Invoice(SyncableModel, Base):
     """Cabecera de Factura/Venta basado en aventa.dbf"""
     __tablename__ = 'invoices'
@@ -148,6 +174,13 @@ class Invoice(SyncableModel, Base):
     client = relationship("Client")
     items = relationship("InvoiceItem", back_populates="invoice")
     payments = relationship("Payment", back_populates="invoice")
+
+@event.listens_for(Invoice, 'before_insert')
+def set_invoice_ven_numero(mapper, connection, target):
+    if target.ven_numero is None:
+        from sqlalchemy import func, select
+        max_nro = connection.scalar(select(func.coalesce(func.max(Invoice.ven_numero), 0)))
+        target.ven_numero = (max_nro or 0) + 1
 
 class InvoiceItem(SyncableModel, Base):
     """Detalle de Factura/Venta basado en avenitem.dbf"""
@@ -178,16 +211,32 @@ class Payment(SyncableModel, Base):
     session = relationship("CashSession", back_populates="payments")
 
 
+
+class User(SyncableModel, Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    password_hash = Column(String(128), nullable=False)
+    full_name = Column(String(100), nullable=False)
+    role = Column(String(20), default='CAJERO')  # 'ADMIN', 'GERENTE', 'CAJERO'
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    sessions = relationship("CashSession", back_populates="user")
+
+
 class CashSession(SyncableModel, Base):
     __tablename__ = 'cash_sessions'
     id = Column(Integer, primary_key=True, index=True)
     opened_at = Column(DateTime, default=datetime.datetime.utcnow)
     closed_at = Column(DateTime, nullable=True)
     status = Column(String(10), default='OPEN') # OPEN, CLOSED
-    user_id = Column(Integer, default=1) # Hardcoded for now
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, default=1)
     
+    user = relationship("User", back_populates="sessions")
     payments = relationship("Payment", back_populates="session")
     audits = relationship("CashAudit", back_populates="session")
+    movements = relationship("CashMovement", back_populates="session")
 
 class CashAudit(SyncableModel, Base):
     __tablename__ = 'cash_audits'
@@ -200,6 +249,45 @@ class CashAudit(SyncableModel, Base):
     diferencia = Column(Numeric(asdecimal=True), default=0.0)
     
     session = relationship("CashSession", back_populates="audits")
+
+class CashMovement(SyncableModel, Base):
+    """Movimientos de caja (Fondo de apertura, Sangría / Retiro de efectivo a tesorería, Ingreso extra)"""
+    __tablename__ = 'cash_movements'
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey('cash_sessions.id'), nullable=False)
+    tipo = Column(String(20), nullable=False) # 'FONDO_INICIAL', 'RETIRO_SANGRIA', 'INGRESO'
+    monto = Column(Numeric(asdecimal=True), nullable=False)
+    moneda = Column(String(3), default='PYG') # PYG, USD, BRL, ARS
+    concepto = Column(String(150), nullable=False)
+    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    
+    session = relationship("CashSession", back_populates="movements")
+    user = relationship("User")
+
+
+class StockAdjustment(SyncableModel, Base):
+    """
+    Ajuste de inventario: Mermas, Donaciones, Devoluciones a Proveedor,
+    Correcciones de inventario físico.
+    Tipos: MERMA, DONACION, DEVOLUCION_PROVEEDOR, AJUSTE_POSITIVO, AJUSTE_NEGATIVO
+    """
+    __tablename__ = 'stock_adjustments'
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    art_codigo = Column(String(6), ForeignKey('products.art_codigo'), nullable=False)
+    tipo = Column(String(25), nullable=False)
+    # MERMA | DONACION | DEVOLUCION_PROVEEDOR | AJUSTE_POSITIVO | AJUSTE_NEGATIVO
+    cantidad = Column(Numeric(asdecimal=True, precision=12, scale=3), nullable=False)
+    motivo = Column(String(200), nullable=False)
+    costo_unitario = Column(Numeric(asdecimal=True), default=Decimal('0'))
+    monto_perdida = Column(Numeric(asdecimal=True), default=Decimal('0'))
+    # monto_perdida = cantidad * costo_unitario (siempre Decimal, nunca float)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    
+    product = relationship("Product")
+    user = relationship("User")
+
 
 
 class Supplier(SyncableModel, Base):
@@ -310,6 +398,40 @@ class RemissionItem(SyncableModel, Base):
     remission = relationship("Remission", back_populates="items")
     product = relationship("Product")
 
+class Budget(SyncableModel, Base):
+    """Presupuesto / Cotización para Clientes (F6)"""
+    __tablename__ = 'budgets'
+    id = Column(Integer, primary_key=True, index=True)
+    numero = Column(String(20), index=True) # PRES-000001
+    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    validez_dias = Column(Integer, default=15)
+    codcli = Column(String(6), ForeignKey('clients.cli_codigo'), nullable=True)
+    cliente_nombre = Column(String(100), default="CONSUMIDOR FINAL")
+    cliente_ruc = Column(String(30), default="44444401-7")
+    total_pyg = Column(Numeric(asdecimal=True), default=Decimal('0'))
+    total_usd = Column(Numeric(asdecimal=True), default=Decimal('0.00'))
+    total_brl = Column(Numeric(asdecimal=True), default=Decimal('0.00'))
+    total_ars = Column(Numeric(asdecimal=True), default=Decimal('0.00'))
+    estado = Column(String(20), default='PENDIENTE') # PENDIENTE, FACTURADO, ANULADO
+    observacion = Column(String(255), nullable=True)
+    
+    client = relationship("Client")
+    items = relationship("BudgetItem", back_populates="budget", cascade="all, delete-orphan")
+
+class BudgetItem(SyncableModel, Base):
+    __tablename__ = 'budget_items'
+    id = Column(Integer, primary_key=True, index=True)
+    budget_id = Column(Integer, ForeignKey('budgets.id'))
+    articu = Column(String(6), ForeignKey('products.art_codigo'))
+    descripcion = Column(String(100), nullable=True)
+    canti = Column(Numeric(asdecimal=True), nullable=False)
+    precio = Column(Numeric(asdecimal=True), nullable=False)
+    impuesto_porc = Column(Integer, default=10) # 10, 5, 0
+    subtotal = Column(Numeric(asdecimal=True), nullable=False)
+    
+    budget = relationship("Budget", back_populates="items")
+    product = relationship("Product")
+
 
 def _model_to_dict(obj):
     d = {}
@@ -352,6 +474,8 @@ def queue_sync_event(mapper, connection, target, action):
 @event.listens_for(Payment, 'after_insert')
 @event.listens_for(Remission, 'after_insert')
 @event.listens_for(RemissionItem, 'after_insert')
+@event.listens_for(Budget, 'after_insert')
+@event.listens_for(BudgetItem, 'after_insert')
 def receive_after_insert(mapper, connection, target):
     queue_sync_event(mapper, connection, target, 'INSERT')
 
@@ -360,6 +484,8 @@ def receive_after_insert(mapper, connection, target):
 @event.listens_for(Payment, 'after_update')
 @event.listens_for(Remission, 'after_update')
 @event.listens_for(RemissionItem, 'after_update')
+@event.listens_for(Budget, 'after_update')
+@event.listens_for(BudgetItem, 'after_update')
 def receive_after_update(mapper, connection, target):
     # Only queue update if we are not just marking it as synced
     # (In a real scenario, we'd check if other fields changed)

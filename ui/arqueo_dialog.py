@@ -103,8 +103,23 @@ class ArqueoDialog(QDialog):
                 key = (p.cob_metodo, p.cob_mndori)
                 teoricos[key] = teoricos.get(key, Decimal("0")) + p.cob_monto
                 
+            # Factoring de Movimientos de Caja (Fondo Inicial y Sangrías)
+            movimientos = db.query(models.CashMovement).filter_by(session_id=self.session_id).all()
+            for m in movimientos:
+                key = ('Efectivo', m.moneda)
+                if m.tipo in ('FONDO_INICIAL', 'INGRESO'):
+                    teoricos[key] = teoricos.get(key, Decimal("0")) + m.monto
+                elif m.tipo in ('RETIRO_SANGRIA', 'EGRESO'):
+                    teoricos[key] = teoricos.get(key, Decimal("0")) - m.monto
+                
             # 3. Comparar y crear Auditoría
             reporte_txt = f"=== REPORTE Z - SESIÓN {session.id} ===\n\n"
+            if movimientos:
+                reporte_txt += "--- MOVIMIENTOS DE CAJA (FONDOS / SANGRÍAS) ---\n"
+                for m in movimientos:
+                    signo = "+" if m.tipo in ('FONDO_INICIAL', 'INGRESO') else "-"
+                    reporte_txt += f"  [{m.tipo}] {signo}{m.monto:,.2f} {m.moneda} ({m.concepto})\n"
+                reporte_txt += "------------------------------------------------\n\n"
             
             # Obtener todas las keys combinadas
             todas_keys = set(declaraciones.keys()).union(set(teoricos.keys()))

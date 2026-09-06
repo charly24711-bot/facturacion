@@ -150,11 +150,11 @@ class PromosDialog(QDialog):
         if prod:
             self.current_product_cod = prod.art_codigo
             self.lbl_prod_nombre.setText(
-                f"{prod.art_descri}  |  Precio actual: ₲ {float(prod.art_preven or 0):,.0f}"
+                f"{prod.art_descri}  |  Precio actual: ₲ {Decimal(str(prod.art_preven or 0)):,.0f}"
             )
             # Sugerir precio normal como base
             if not self.txt_precio.text():
-                self.txt_precio.setText(f"{float(prod.art_preven or 0):.0f}")
+                self.txt_precio.setText(f"{Decimal(str(prod.art_preven or 0)):.0f}")
         else:
             self.current_product_cod = None
             self.lbl_prod_nombre.setText("— No encontrado —")
@@ -178,7 +178,7 @@ class PromosDialog(QDialog):
         db = SessionLocal()
         promo = models.ProductPromo(
             pro_articu=self.current_product_cod,
-            pro_precio=float(precio),
+            pro_precio=precio,
             pro_desde=datetime.datetime.combine(desde, datetime.time.min),
             pro_hasta=datetime.datetime.combine(hasta, datetime.time(23, 59, 59)),
             pro_descri=self.txt_descri.text().strip() or "Promo",
@@ -207,7 +207,7 @@ class PromosDialog(QDialog):
             self.table.setItem(row, 0, QTableWidgetItem(str(promo.id)))
             prod_desc = promo.product.art_descri if promo.product else promo.pro_articu
             self.table.setItem(row, 1, QTableWidgetItem(prod_desc))
-            self.table.setItem(row, 2, QTableWidgetItem(f"₲ {float(promo.pro_precio):,.0f}"))
+            self.table.setItem(row, 2, QTableWidgetItem(f"₲ {Decimal(str(promo.pro_precio)):,.0f}"))
             self.table.setItem(row, 3, QTableWidgetItem(promo.pro_descri or ""))
             self.table.setItem(row, 4, QTableWidgetItem(promo.pro_desde.strftime("%d/%m/%Y")))
             self.table.setItem(row, 5, QTableWidgetItem(promo.pro_hasta.strftime("%d/%m/%Y")))

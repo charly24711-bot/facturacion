@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushB
 from database import SessionLocal
 import models
 import datetime
+from decimal import Decimal, InvalidOperation
 
 class CotizacionDialog(QDialog):
     def __init__(self, parent=None):
@@ -43,27 +44,44 @@ class CotizacionDialog(QDialog):
         rates = {r.currency_code: r.buy_rate for r in db.query(models.CurrencyRate).filter_by(is_active=True).all()}
         db.close()
         
-        self.txt_usd.setText(f"{float(rates.get('USD', 7500.0)):.0f}")
-        self.txt_brl.setText(f"{float(rates.get('BRL', 1500.0)):.0f}")
-        self.txt_ars.setText(f"{float(rates.get('ARS', 10.0)):.0f}")
+        usd_val = rates.get('USD', Decimal('7500'))
+        brl_val = rates.get('BRL', Decimal('1500'))
+        ars_val = rates.get('ARS', Decimal('10'))
+        
+        self.txt_usd.setText(f"{Decimal(str(usd_val)):.0f}")
+        self.txt_brl.setText(f"{Decimal(str(brl_val)):.0f}")
+        self.txt_ars.setText(f"{Decimal(str(ars_val)):.0f}")
 
     def guardar_cotizacion(self):
         try:
-            usd = float(self.txt_usd.text())
-            brl = float(self.txt_brl.text())
-            ars = float(self.txt_ars.text())
+            usd = Decimal(self.txt_usd.text().strip().replace(',', '.'))
+            brl = Decimal(self.txt_brl.text().strip().replace(',', '.'))
+            ars = Decimal(self.txt_ars.text().strip().replace(',', '.'))
             
             db = SessionLocal()
+            
+            # Asegurar que las monedas base existan en la tabla currencies
+            for cur_code, cur_name, cur_sym, cur_dec, cur_base in [
+                ("PYG", "Guaraní", "Gs", 0, True),
+                ("USD", "Dólar Americano", "US$", 2, False),
+                ("BRL", "Real Brasileño", "R$", 2, False),
+                ("ARS", "Peso Argentino", "$", 2, False),
+            ]:
+                if not db.query(models.Currency).filter_by(code=cur_code).first():
+                    db.add(models.Currency(
+                        code=cur_code, name=cur_name, symbol=cur_sym, decimals=cur_dec, is_base=cur_base
+                    ))
+            db.flush()
             
             for code, rate in [("USD", usd), ("BRL", brl), ("ARS", ars)]:
                 # Chequear si cambió respecto a la actual
                 current = db.query(models.CurrencyRate).filter_by(currency_code=code, is_active=True).first()
-                if not current or float(current.buy_rate) != rate:
-                    # Desactivar anterior
+                if not current or Decimal(str(current.buy_rate)) != rate:
+                    # Desactivar anterior (registro inmutable, nunca UPDATE destructivo de cotización)
                     if current:
                         current.is_active = False
                     
-                    # Insertar nueva
+                    # Insertar nuevo registro
                     new_rate = models.CurrencyRate(
                         currency_code=code,
                         buy_rate=rate,
@@ -78,5 +96,5 @@ class CotizacionDialog(QDialog):
             
             QMessageBox.information(self, "Éxito", "Cotizaciones guardadas correctamente.")
             self.accept()
-        except ValueError:
+        except (InvalidOperation, ValueError):
             QMessageBox.warning(self, "Error", "Por favor ingresa valores numéricos válidos.")

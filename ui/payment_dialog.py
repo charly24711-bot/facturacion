@@ -8,12 +8,18 @@ import models
 from decimal import Decimal
 import math
 
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../.agents/skills')))
+from ruc_validator.ruc_validator import calcular_dv_ruc, formatear_ruc, validar_ruc, obtener_contribuyente
+
 class PaymentDialog(QDialog):
     def __init__(self, totals, client=None, parent=None):
         super().__init__(parent)
         self.client = client
-        self.setWindowTitle("Cobro Split Multimoneda [F11]")
-        self.resize(700, 600)
+        self.selected_client = client
+        self.setWindowTitle("Cobro Split Multimoneda y Facturación [F11]")
+        self.resize(750, 700)
         
         self.total_adeudado_pyg = Decimal(str(totals.get('PYG', 0.0)))
         self.payment_successful = False
@@ -46,14 +52,50 @@ class PaymentDialog(QDialog):
         # --- CABECERA ---
         lbl_title = QLabel("TOTAL A COBRAR")
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_title.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        lbl_title.setFont(QFont("Arial", 11, QFont.Weight.Bold))
         main_layout.addWidget(lbl_title)
         
         self.lbl_total_pyg = QLabel(f"Gs. {self.total_adeudado_pyg:,.0f}")
         self.lbl_total_pyg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_total_pyg.setFont(QFont("Arial", 32, QFont.Weight.Bold))
-        self.lbl_total_pyg.setStyleSheet("color: darkblue;")
+        self.lbl_total_pyg.setFont(QFont("Arial", 28, QFont.Weight.Bold))
+        self.lbl_total_pyg.setStyleSheet("color: #0d47a1;")
         main_layout.addWidget(self.lbl_total_pyg)
+        
+        # --- PANEL CLIENTE / FACTURA LEGAL CON IVA ---
+        group_cliente = QGroupBox("Datos del Cliente / Factura con RUC e IVA")
+        layout_cli = QGridLayout(group_cliente)
+        layout_cli.setSpacing(6)
+        
+        layout_cli.addWidget(QLabel("RUC / C.I.:"), 0, 0)
+        self.txt_cliente_ruc = QLineEdit()
+        self.txt_cliente_ruc.setPlaceholderText("Ej: 80001234 o C.I. (Enter para consultar)...")
+        self.txt_cliente_ruc.returnPressed.connect(self.consultar_ruc_cliente)
+        self.txt_cliente_ruc.editingFinished.connect(self.consultar_ruc_cliente)
+        layout_cli.addWidget(self.txt_cliente_ruc, 0, 1)
+        
+        btn_buscar_cli = QPushButton("🔍 Buscar [F8]")
+        btn_buscar_cli.setStyleSheet("background-color: #0288d1; color: white; font-weight: bold; padding: 4px 8px;")
+        btn_buscar_cli.clicked.connect(self.abrir_busqueda_cliente)
+        layout_cli.addWidget(btn_buscar_cli, 0, 2)
+        
+        btn_cf = QPushButton("👤 Consumidor Final")
+        btn_cf.setStyleSheet("background-color: #607d8b; color: white; font-weight: bold; padding: 4px 8px;")
+        btn_cf.clicked.connect(self.set_consumidor_final)
+        layout_cli.addWidget(btn_cf, 0, 3)
+        
+        layout_cli.addWidget(QLabel("Razón Social / Nombre:"), 1, 0)
+        self.txt_cliente_nombre = QLineEdit()
+        self.txt_cliente_nombre.setPlaceholderText("Nombre del cliente o razón social...")
+        layout_cli.addWidget(self.txt_cliente_nombre, 1, 1, 1, 2)
+        
+        self.lbl_cliente_status = QLabel("[Consumidor Final]")
+        self.lbl_cliente_status.setStyleSheet("color: #2e7d32; font-weight: bold;")
+        layout_cli.addWidget(self.lbl_cliente_status, 1, 3)
+        
+        main_layout.addWidget(group_cliente)
+        
+        # Inicializar datos del cliente provisto
+        self.inicializar_datos_cliente()
         
         # --- PANEL DE INGRESO DE PAGOS ---
         group_ingreso = QGroupBox("Añadir Pago Parcial")
@@ -71,6 +113,7 @@ class PaymentDialog(QDialog):
         self.txt_monto.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         self.txt_monto.textChanged.connect(self.format_monto)
         self.txt_monto.returnPressed.connect(self.agregar_pago)
+        self.txt_cliente_nombre.returnPressed.connect(self.txt_monto.setFocus)
         
         self.lbl_cotizacion_act = QLabel("Tasa: 1.0")
         
@@ -265,6 +308,133 @@ class PaymentDialog(QDialog):
                 vuelto_final = math.floor((vuelto_pyg / tasa_venta) * 100) / 100.0
                 self.lbl_vuelto_final.setText(f"{vuelto_final:,.2f} {moneda_vuelto}")
 
+    def inicializar_datos_cliente(self):
+        if self.client and self.client.cli_codigo != "000001":
+            self.txt_cliente_ruc.setText(self.client.cli_ruc or "")
+            self.txt_cliente_nombre.setText(self.client.cli_nombre or "")
+            self.lbl_cliente_status.setText("[Cliente Registrado]")
+            self.lbl_cliente_status.setStyleSheet("color: #1565c0; font-weight: bold;")
+        else:
+            self.set_consumidor_final()
+
+    def set_consumidor_final(self):
+        self.txt_cliente_ruc.setText("")
+        self.txt_cliente_nombre.setText("CONSUMIDOR FINAL")
+        self.lbl_cliente_status.setText("[Consumidor Final - Sin RUC]")
+        self.lbl_cliente_status.setStyleSheet("color: #2e7d32; font-weight: bold;")
+        self.selected_client = None
+
+    def consultar_ruc_cliente(self):
+        texto = self.txt_cliente_ruc.text().strip()
+        if not texto:
+            self.set_consumidor_final()
+            self.txt_monto.setFocus()
+            return
+
+        ruc_normalizado = formatear_ruc(texto)
+        if ruc_normalizado:
+            self.txt_cliente_ruc.setText(ruc_normalizado)
+            
+        base_ruc = ruc_normalizado.split('-')[0] if ruc_normalizado else texto.split('-')[0]
+        
+        db = SessionLocal()
+        try:
+            # 1. Buscar si ya existe como Cliente registrado
+            cli = db.query(models.Client).filter(
+                (models.Client.cli_ruc == ruc_normalizado) |
+                (models.Client.cli_ruc == base_ruc)
+            ).first()
+            
+            if cli:
+                self.txt_cliente_nombre.setText(cli.cli_nombre)
+                self.lbl_cliente_status.setText("[Cliente Registrado]")
+                self.lbl_cliente_status.setStyleSheet("color: #1565c0; font-weight: bold;")
+                self.selected_client = cli
+                self.txt_monto.setFocus()
+                return
+                
+            # 2. Buscar en el Padrón Oficial DNIT (Local u Online con auto-caching)
+            contrib = obtener_contribuyente(db, base_ruc, auto_cache=True)
+            if contrib:
+                self.txt_cliente_nombre.setText(contrib['razon_social'])
+                tag_origen = "[DNIT]" if contrib.get('origen') == 'LOCAL' else "[DNIT Online]"
+                self.lbl_cliente_status.setText(f"{tag_origen} Padrón Verificado")
+                self.lbl_cliente_status.setStyleSheet("color: #2e7d32; font-weight: bold;")
+                self.txt_monto.setFocus()
+                return
+                
+            # 3. No es contribuyente en DNIT pero C.I. válida (Persona física sin RUC)
+            self.lbl_cliente_status.setText("[Sin RUC en DNIT - Ingrese Nombre]")
+            self.lbl_cliente_status.setStyleSheet("color: #e65100; font-weight: bold;")
+            if not self.txt_cliente_nombre.text() or self.txt_cliente_nombre.text() == "CONSUMIDOR FINAL":
+                self.txt_cliente_nombre.clear()
+                self.txt_cliente_nombre.setFocus()
+            else:
+                self.txt_monto.setFocus()
+        finally:
+            db.close()
+
+    def abrir_busqueda_cliente(self):
+        from ui.client_search_dialog import ClientSearchDialog
+        dlg = ClientSearchDialog(self)
+        if dlg.exec() and dlg.selected_client:
+            self.selected_client = dlg.selected_client
+            self.txt_cliente_ruc.setText(dlg.selected_client.cli_ruc or "")
+            self.txt_cliente_nombre.setText(dlg.selected_client.cli_nombre or "")
+            self.lbl_cliente_status.setText("[Cliente Seleccionado]")
+            self.lbl_cliente_status.setStyleSheet("color: #1565c0; font-weight: bold;")
+            self.txt_monto.setFocus()
+
+    def resolver_cliente_final(self):
+        db = SessionLocal()
+        try:
+            ruc_in = self.txt_cliente_ruc.text().strip()
+            nom_in = self.txt_cliente_nombre.text().strip()
+            
+            # Caso Consumidor Final
+            if (not ruc_in or ruc_in == "44444401-7") and (not nom_in or nom_in.upper() == "CONSUMIDOR FINAL"):
+                cf = db.query(models.Client).filter_by(cli_codigo="000001").first()
+                if not cf:
+                    cf = models.Client(cli_codigo="000001", cli_nombre="CONSUMIDOR FINAL", cli_ruc="44444401-7")
+                    db.add(cf)
+                    db.commit()
+                    db.refresh(cf)
+                self.selected_client = cf
+                return
+                
+            # Caso Cliente con RUC o Nombre específico
+            existente = None
+            if ruc_in:
+                existente = db.query(models.Client).filter(
+                    (models.Client.cli_ruc == ruc_in) | 
+                    (models.Client.cli_ruc == ruc_in.split('-')[0])
+                ).first()
+            if not existente and nom_in and nom_in.upper() != "CONSUMIDOR FINAL":
+                existente = db.query(models.Client).filter_by(cli_nombre=nom_in).first()
+                
+            if existente:
+                self.selected_client = existente
+            else:
+                # Generar nuevo código correlativo de 6 dígitos
+                codes = db.query(models.Client.cli_codigo).all()
+                max_val = 0
+                for (code,) in codes:
+                    if code and str(code).strip().isdigit():
+                        max_val = max(max_val, int(code.strip()))
+                next_code = str(max_val + 1).zfill(6)
+                
+                nuevo = models.Client(
+                    cli_codigo=next_code,
+                    cli_nombre=nom_in or "CLIENTE OCASIONAL",
+                    cli_ruc=ruc_in or "44444401-7"
+                )
+                db.add(nuevo)
+                db.commit()
+                db.refresh(nuevo)
+                self.selected_client = nuevo
+        finally:
+            db.close()
+
     def procesar_cobro(self):
         self.payments_list = []
         for row in range(self.table_pagos.rowCount()):
@@ -276,9 +446,10 @@ class PaymentDialog(QDialog):
             self.payments_list.append({
                 'moneda': moneda,
                 'metodo': metodo,
-                'monto_origen': float(monto_origen),
-                'monto_pyg': float(monto_pyg)
+                'monto_origen': monto_origen,
+                'monto_pyg': monto_pyg
             })
             
+        self.resolver_cliente_final()
         self.payment_successful = True
         self.accept()

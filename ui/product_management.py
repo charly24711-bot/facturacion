@@ -3,7 +3,8 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QHeaderView, QMessageBox, QGroupBox, QSplitter, 
                              QTabWidget, QWidget, QComboBox, QCheckBox)
 from PyQt6.QtCore import Qt
-from database import SessionLocal
+from database import SessionLocal, format_stock_qty, format_iva_rate
+from decimal import Decimal
 import models
 
 class ProductManagementDialog(QDialog):
@@ -80,7 +81,11 @@ class ProductManagementDialog(QDialog):
         self.txt_costo = QLineEdit()
         self.txt_costo.textChanged.connect(lambda t, le=self.txt_costo: self.auto_format_thousands(t, le))
         self.txt_preven = QLineEdit()
-        self.txt_impu = QLineEdit("10.0")
+        
+        self.combo_impu = QComboBox()
+        self.combo_impu.addItem("10% — Tasa General", 10)
+        self.combo_impu.addItem("5% — Canasta Básica / Agropecuario", 5)
+        self.combo_impu.addItem("0% — Exenta", 0)
         
         self.txt_stkmin = QLineEdit("10")
         self.txt_stkmax = QLineEdit("200")
@@ -96,7 +101,7 @@ class ProductManagementDialog(QDialog):
         form_layout.addRow("Ubicación Física:", self.txt_location)
         form_layout.addRow("Costo Base:", self.txt_costo)
         form_layout.addRow("Precio de Venta:", self.txt_preven)
-        form_layout.addRow("IVA (%):", self.txt_impu)
+        form_layout.addRow("Tasa de IVA (*):", self.combo_impu)
         form_layout.addRow("Stock Actual (Solo Ref.):", self.txt_stkini)
         form_layout.addRow("Stock Mínimo:", self.txt_stkmin)
         form_layout.addRow("Stock Máximo:", self.txt_stkmax)
@@ -220,12 +225,17 @@ class ProductManagementDialog(QDialog):
             self.txt_codigo.setText(prod.art_codigo)
             self.txt_cbarra.setText(prod.art_cbarra or "")
             self.txt_descri.setText(prod.art_descri)
-            self.txt_costo.setText(f"{float(prod.art_costo):g}")
-            self.txt_preven.setText(f"{float(prod.art_preven):.0f}")
-            self.txt_impu.setText(f"{float(prod.art_impu):g}")
-            self.txt_stkini.setText(str(prod.art_stkini))
-            self.txt_stkmin.setText(str(prod.art_stkmin))
-            self.txt_stkmax.setText(str(prod.art_stkmax))
+            self.txt_costo.setText(f"{Decimal(str(prod.art_costo or 0)):,.0f}")
+            self.txt_preven.setText(f"{Decimal(str(prod.art_preven or 0)):,.0f}")
+            impu_val = int(Decimal(str(prod.art_impu or 10)))
+            idx_impu = self.combo_impu.findData(impu_val)
+            if idx_impu >= 0:
+                self.combo_impu.setCurrentIndex(idx_impu)
+            else:
+                self.combo_impu.setCurrentIndex(0)
+            self.txt_stkini.setText(format_stock_qty(prod.art_stkini))
+            self.txt_stkmin.setText(format_stock_qty(prod.art_stkmin))
+            self.txt_stkmax.setText(format_stock_qty(prod.art_stkmax))
             
             # Combos y Checkboxes
             if prod.category_id:
@@ -243,13 +253,14 @@ class ProductManagementDialog(QDialog):
             
             self.txt_codigo.setReadOnly(True) 
             
-            self.current_image_path = prod.image_path
-            if prod.image_path:
-                import os
+            from database import resolve_image_path
+            img_resolved = resolve_image_path(prod.image_path, prod.art_codigo)
+            self.current_image_path = img_resolved
+            if img_resolved:
                 from PyQt6.QtGui import QPixmap
-                if os.path.exists(prod.image_path):
-                    pixmap = QPixmap(prod.image_path)
-                    self.lbl_product_photo.setPixmap(pixmap.scaled(self.lbl_product_photo.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                pixmap = QPixmap(img_resolved)
+                if not pixmap.isNull():
+                    self.lbl_product_photo.setPixmap(pixmap.scaled(200, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
                 else:
                     self.lbl_product_photo.clear()
                     self.lbl_product_photo.setText("Sin Foto")
@@ -287,7 +298,7 @@ class ProductManagementDialog(QDialog):
         self.txt_descri.clear()
         self.txt_costo.setText("0")
         self.txt_preven.setText("0")
-        self.txt_impu.setText("10.0")
+        self.combo_impu.setCurrentIndex(0)
         self.txt_stkini.setText("0")
         self.txt_stkmin.setText("10")
         self.txt_stkmax.setText("200")
@@ -325,12 +336,12 @@ class ProductManagementDialog(QDialog):
                 
             prod.art_cbarra = self.txt_cbarra.text()
             prod.art_descri = descri
-            prod.art_costo = float(str(self.txt_costo.text()).replace(',', '') or 0)
-            prod.art_preven = float(str(self.txt_preven.text()).replace(',', '') or 0)
-            prod.art_impu = float(str(self.txt_impu.text()).replace(',', '') or 10.0)
-            prod.art_stkini = float(str(self.txt_stkini.text()).replace(',', '') or 0)
-            prod.art_stkmin = int(self.txt_stkmin.text() or 10)
-            prod.art_stkmax = int(self.txt_stkmax.text() or 200)
+            prod.art_costo = Decimal(str(self.txt_costo.text()).replace(',', '') or 0)
+            prod.art_preven = Decimal(str(self.txt_preven.text()).replace(',', '') or 0)
+            prod.art_impu = Decimal(str(self.combo_impu.currentData() or 10))
+            prod.art_stkini = Decimal(str(self.txt_stkini.text()).replace(',', '') or 0)
+            prod.art_stkmin = Decimal(str(self.txt_stkmin.text()).replace(',', '') or 10)
+            prod.art_stkmax = Decimal(str(self.txt_stkmax.text()).replace(',', '') or 200)
             
             prod.category_id = self.combo_cat.currentData()
             prod.brand_id = self.combo_brand.currentData()

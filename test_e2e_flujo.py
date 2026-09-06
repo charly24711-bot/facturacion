@@ -66,7 +66,7 @@ def main():
         compra.com_total = subtotal_compra
         
         # Inyectar Stock y Lote
-        nuevo_prod.art_stkini = float(qty_comprada)
+        nuevo_prod.art_stkini = qty_comprada
         lote = models.ProductBatch(
             product_id=nuevo_prod.id,
             lote="LOTE-TEST-01",
@@ -105,7 +105,7 @@ def main():
             "description": nuevo_prod.art_descri,
             "quantity": str(cantidad_venta),
             "unit_price": str(nuevo_prod.art_preven),
-            "tax_rate": float(nuevo_prod.art_impu)
+            "tax_rate": int(nuevo_prod.art_impu)
         }
         status = POSGuardrail.validate_sale_item(payload)
         if not status.is_valid:
@@ -131,7 +131,7 @@ def main():
         ))
         
         # Deducción de Stock
-        nuevo_prod.art_stkini = float(Decimal(str(nuevo_prod.art_stkini)) - status.clean_data["quantity"])
+        nuevo_prod.art_stkini = Decimal(str(nuevo_prod.art_stkini)) - status.clean_data["quantity"]
         
         # Pago
         pago_venta = models.Payment(
@@ -166,7 +166,7 @@ def main():
         ))
         
         # Reintegro de stock
-        nuevo_prod.art_stkini = float(Decimal(str(nuevo_prod.art_stkini)) + Decimal('1'))
+        nuevo_prod.art_stkini = Decimal(str(nuevo_prod.art_stkini)) + Decimal('1')
         
         # Retiro de dinero de la caja
         pago_nc = models.Payment(
@@ -206,7 +206,7 @@ def main():
         print("  [+] Arqueo Cuadrado a Cero (0 Diferencia). Turno Cerrado Exitosamente.")
         
         print("\n" + "="*60)
-        print("✓ FLUJO OPERATIVO VALIDADO SIN ERRORES")
+        print("[OK] FLUJO OPERATIVO VALIDADO SIN ERRORES")
         print("="*60)
         
     finally:
