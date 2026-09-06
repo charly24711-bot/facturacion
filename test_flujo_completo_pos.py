@@ -129,7 +129,7 @@ def test_todo_el_flujo():
     assert Decimal(str(parsed.get("peso_kg"))) == Decimal('1.250')
 
     banner("5. CREACIÓN DE PRODUCTOS DE TEST Y LOTES FIFO")
-    for old_code in ["PROD-STD-01", "000035"]:
+    for old_code in ["003020", "000035"]:
         old_prod = db.query(models.Product).filter_by(art_codigo=old_code).first()
         if old_prod:
             db.query(models.ProductBatch).filter_by(product_id=old_prod.id).delete()
@@ -138,7 +138,7 @@ def test_todo_el_flujo():
 
     # 5.1 Producto Estándar
     prod_std = models.Product(
-        art_codigo="PROD-STD-01",
+        art_codigo="003020",
         art_descri="ARROZ TEST 5KG",
         art_cbarra="7840001000012",
         art_costo=Decimal('20000'),
@@ -204,7 +204,7 @@ def test_todo_el_flujo():
     window.txt_codigo.setText("7840001000012")
     window.buscar_producto()
     assert window.ventas_model.rowCount() == 1
-    assert window.ventas_model.items[0]['codigo'] == "PROD-STD-01"
+    assert window.ventas_model.items[0]['codigo'] == "003020"
     assert window.ventas_model.items[0]['cantidad'] == Decimal('1')
     assert window.ventas_model.items[0]['precio'] == Decimal('28000')
 
@@ -263,7 +263,7 @@ def test_todo_el_flujo():
     ]
 
     # Ejecutar guardado a través del método de MainWindow (que valida con POSGuardrail y descuenta lotes)
-    stock_std_antes = db.query(models.Product).filter_by(art_codigo="PROD-STD-01").first().art_stkini
+    stock_std_antes = db.query(models.Product).filter_by(art_codigo="003020").first().art_stkini
     stock_bal_antes = db.query(models.Product).filter_by(art_codigo="000035").first().art_stkini
 
     window.guardar_venta_db(pagos)
@@ -279,7 +279,7 @@ def test_todo_el_flujo():
     print(f"[+] Factura #{ultima_factura.id} registrada con éxito. Total: Gs. {ultima_factura.ven_total:,.0f}")
 
     # Verificar que el stock se descontó con Decimal estricto
-    prod_std_despues = db.query(models.Product).filter_by(art_codigo="PROD-STD-01").first()
+    prod_std_despues = db.query(models.Product).filter_by(art_codigo="003020").first()
     prod_bal_despues = db.query(models.Product).filter_by(art_codigo="000035").first()
     print(f"[+] Stock Arroz: Antes={stock_std_antes} -> Después={prod_std_despues.art_stkini} (Descontado: 3)")
     print(f"[+] Stock Tomate: Antes={stock_bal_antes} -> Después={prod_bal_despues.art_stkini} (Descontado: 1.250)")

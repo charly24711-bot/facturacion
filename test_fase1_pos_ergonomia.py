@@ -50,10 +50,10 @@ def canal_mayorista(db):
 @pytest.fixture(scope="module")
 def producto_test(db):
     """Crea o recupera un producto de prueba."""
-    prod = db.query(models.Product).filter_by(art_codigo="TST001").first()
+    prod = db.query(models.Product).filter_by(art_codigo="003022").first()
     if not prod:
         prod = models.Product(
-            art_codigo="TST001",
+            art_codigo="003022",
             art_descri="Producto Test Fase1",
             art_cbarra="7890001234567",
             art_costo=Decimal("10000"),

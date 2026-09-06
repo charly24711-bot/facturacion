@@ -38,10 +38,10 @@ def db():
 @pytest.fixture(scope="module")
 def prod_ajuste(db):
     """Producto de prueba para ajustes de stock."""
-    p = db.query(models.Product).filter_by(art_codigo="ADJ01").first()
+    p = db.query(models.Product).filter_by(art_codigo="003023").first()
     if not p:
         p = models.Product(
-            art_codigo="ADJ01",
+            art_codigo="003023",
             art_descri="Producto Ajuste Merma Test F2",
             art_cbarra="7891234500001",
             art_costo=Decimal("8000"),

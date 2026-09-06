@@ -292,8 +292,19 @@ class ProductManagementDialog(QDialog):
         self.lbl_product_photo.clear()
         self.lbl_product_photo.setText("Sin Foto")
         
-        self.txt_codigo.clear()
         self.txt_codigo.setReadOnly(False)
+        
+        # Sugerir automáticamente el siguiente código correlativo de 6 dígitos
+        db = SessionLocal()
+        max_cod = 0
+        try:
+            for p in db.query(models.Product.art_codigo).all():
+                if p[0] and p[0].isdigit():
+                    max_cod = max(max_cod, int(p[0]))
+        finally:
+            db.close()
+            
+        self.txt_codigo.setText(f"{max_cod + 1:06d}")
         self.txt_cbarra.clear()
         self.txt_descri.clear()
         self.txt_costo.setText("0")
@@ -309,12 +320,17 @@ class ProductManagementDialog(QDialog):
         self.table_batches.setRowCount(0)
         
         self.tabs.setCurrentIndex(0)
-        self.txt_codigo.setFocus()
+        self.txt_descri.setFocus()
         
     def save_product(self):
         codigo = self.txt_codigo.text().strip()
         descri = self.txt_descri.text().strip()
         
+        # Normalizar automáticamente a estándar de 6 dígitos
+        if codigo.isdigit() and len(codigo) < 6:
+            codigo = codigo.zfill(6)
+            self.txt_codigo.setText(codigo)
+            
         if not codigo or not descri:
             QMessageBox.warning(self, "Error", "El Código y la Descripción son obligatorios.")
             return
