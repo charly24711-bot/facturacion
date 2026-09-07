@@ -356,7 +356,45 @@ class StockAdjustmentDialog(QDialog):
             if prod:
                 nuevo_stock = Decimal(str(prod.art_stkini or '0')) + delta_stock
                 prod.art_stkini = nuevo_stock
-
+                
+                # Regla de Negocio: Si es devolución (delta_stock > 0), restituir al lote con vencimiento más lejano
+                if delta_stock > Decimal('0'):
+                    lote_lejano = (db.query(models.ProductBatch)
+                                     .filter_by(product_id=prod.id)
+                                     .order_by(models.ProductBatch.fecha_vencimiento.desc())
+                                     .first())
+                    if lote_lejano:
+                        lote_lejano.stock_actual = Decimal(str(lote_lejano.stock_actual or '0')) + delta_stock
+                    else:
+                        # Si no hay lotes (ej. producto nuevo o sin lotes), creamos un lote genérico de devolución
+                        from datetime import datetime, timedelta
+                        import uuid
+                        lote_generico = models.ProductBatch(
+                            product_id=prod.id,
+                            lote=f"DEV-{datetime.now().strftime('%Y%m%d%H%M')}",
+                            fecha_vencimiento=datetime.now() + timedelta(days=365),
+                            stock_actual=delta_stock
+                        )
+                        db.add(lote_generico)
+                elif delta_stock < Decimal('0'):
+                    # Si es merma, deducir de los lotes FIFO (los más próximos a vencer)
+                    qty_to_deduct = abs(delta_stock)
+                    batches = (db.query(models.ProductBatch)
+                                 .filter(models.ProductBatch.product_id == prod.id, 
+                                         models.ProductBatch.stock_actual > 0)
+                                 .order_by(models.ProductBatch.fecha_vencimiento.asc())
+                                 .all())
+                    for b in batches:
+                        if qty_to_deduct <= Decimal('0'):
+                            break
+                        available = Decimal(str(b.stock_actual or '0'))
+                        if available >= qty_to_deduct:
+                            b.stock_actual = available - qty_to_deduct
+                            qty_to_deduct = Decimal('0')
+                        else:
+                            b.stock_actual = Decimal('0')
+                            qty_to_deduct = qty_to_deduct - available
+            
             db.commit()
 
             QMessageBox.information(

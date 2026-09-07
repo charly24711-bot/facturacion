@@ -12,8 +12,9 @@ from PyQt6.QtCore import pyqtSignal
 class VentasTableModel(QAbstractTableModel):
     qty_changed_for_tier = pyqtSignal(int, object)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, current_role="CAJERO"):
         super().__init__(parent)
+        self.current_role = current_role
         self.headers = ["Nro", "Codigo", "Descripcion", "Dp", "Cantidad", "Imp", "Iva", "Precio", "Total"]
         self.items = [] # Lista de diccionarios
 
@@ -74,11 +75,24 @@ class VentasTableModel(QAbstractTableModel):
                     return True
                 except (ValueError, InvalidOperation):
                     return False
+                    
+            # Solo permitimos editar Precio (columna 7) si es ADMIN o GERENTE
+            if col == 7 and self.current_role in ["ADMIN", "GERENTE"]:
+                try:
+                    nuevo_precio = Decimal(str(value))
+                    self.items[row]['precio'] = nuevo_precio
+                    self._recalcular_fila(row)
+                    self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+                    return True
+                except (ValueError, InvalidOperation):
+                    return False
         return False
 
     def flags(self, index):
         default_flags = super().flags(index)
         if index.column() == 4:
+            return default_flags | Qt.ItemFlag.ItemIsEditable
+        if index.column() == 7 and self.current_role in ["ADMIN", "GERENTE"]:
             return default_flags | Qt.ItemFlag.ItemIsEditable
         return default_flags
 

@@ -81,7 +81,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 # Luego se puede cambiar a: "mysql+pymysql://root:password@localhost/stock_control"
 DATABASE_URL = "sqlite:///./stock_control.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, echo=False)
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 15}, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 import unicodedata
@@ -96,6 +96,12 @@ def strip_accents(text):
 def set_sqlite_functions(dbapi_connection, connection_record):
     try:
         dbapi_connection.create_function("unaccent", 1, strip_accents)
+        # Habilitar WAL (Write-Ahead Logging) para máxima concurrencia en SQLite
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+        cursor.execute("PRAGMA busy_timeout=15000;")
+        cursor.close()
     except Exception:
         pass
 

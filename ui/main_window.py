@@ -156,7 +156,8 @@ class MainWindow(QMainWindow):
         central_panel_layout = QHBoxLayout()
         
         self.table_detalle = QTableView()
-        self.ventas_model = VentasTableModel()
+        user_role = self.current_user.get('role', 'CAJERO') if getattr(self, 'current_user', None) else 'CAJERO'
+        self.ventas_model = VentasTableModel(current_role=user_role)
         self.ventas_model.qty_changed_for_tier.connect(self.on_qty_changed_tier)
         self.table_detalle.setModel(self.ventas_model)
         self.table_detalle.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -563,12 +564,16 @@ class MainWindow(QMainWindow):
                 )
                 db.add(item)
                 
-                # Descontar stock general
+                # Descontar stock general ATÓMICAMENTE (Previene Race Conditions)
                 producto = db.query(models.Product).filter_by(art_codigo=cod_art).first()
                 if producto:
-                    producto.art_stkini = _safe_dec(producto.art_stkini or 0) - cantidad
+                    db.query(models.Product).filter_by(id=producto.id).update({
+                        "art_stkini": models.Product.art_stkini - cantidad
+                    })
+                    db.commit() # Flush para aplicar el UPDATE atómico al DB
+                    db.refresh(producto) # Recargar el valor para UI o logs si es necesario
                     
-                    # FIFO Descontar stock de lotes
+                    # FIFO Descontar stock de lotes (Atómico a nivel de celda)
                     qty_to_deduct = cantidad
                     batches = (db.query(models.ProductBatch)
                                  .filter(models.ProductBatch.product_id == producto.id, 
@@ -580,12 +585,12 @@ class MainWindow(QMainWindow):
                         if qty_to_deduct <= Decimal('0'):
                             break
                         available = _safe_dec(b.stock_actual)
-                        if available >= qty_to_deduct:
-                            b.stock_actual = available - qty_to_deduct
-                            qty_to_deduct = Decimal('0')
-                        else:
-                            b.stock_actual = Decimal('0')
-                            qty_to_deduct = qty_to_deduct - available
+                        deduccion = min(available, qty_to_deduct)
+                        
+                        db.query(models.ProductBatch).filter_by(id=b.id).update({
+                            "stock_actual": models.ProductBatch.stock_actual - deduccion
+                        })
+                        qty_to_deduct -= deduccion
             
             # 3. Registrar Cobranza
             for p in payments_list:
