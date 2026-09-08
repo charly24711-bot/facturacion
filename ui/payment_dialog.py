@@ -5,6 +5,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
 from database import SessionLocal
 import models
+from utils.formatting import aplicar_formato_moneda, parsear_monto
 from decimal import Decimal
 import math
 
@@ -113,7 +114,7 @@ class PaymentDialog(QDialog):
         self.txt_monto = QLineEdit()
         self.txt_monto.setPlaceholderText("Monto entregado")
         self.txt_monto.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        self.txt_monto.textChanged.connect(self.format_monto)
+        self.txt_monto.textChanged.connect(lambda text: aplicar_formato_moneda(text, self.combo_moneda.currentText(), self.txt_monto))
         self.txt_monto.returnPressed.connect(self.agregar_pago)
         self.txt_cliente_nombre.returnPressed.connect(self.txt_monto.setFocus)
         
@@ -210,45 +211,13 @@ class PaymentDialog(QDialog):
         self.lbl_cotizacion_act.setText(f"Tasa: {tasa_compra:,.2f}")
 
 
-    def format_monto(self, text):
-        if not text:
-            return
-        
-        # Guardar posición del cursor
-        cursor_pos = self.txt_monto.cursorPosition()
-        
-        clean_text = text.replace(",", "")
-        
-        try:
-            parts = clean_text.split(".")
-            if len(parts) == 1:
-                if parts[0].isdigit():
-                    formatted = f"{int(parts[0]):,}"
-                else:
-                    formatted = parts[0]
-            elif len(parts) == 2:
-                if parts[0] == "": parts[0] = "0"
-                if parts[0].isdigit():
-                    formatted = f"{int(parts[0]):,}.{parts[1]}"
-                else:
-                    formatted = clean_text
-            else:
-                formatted = clean_text
-                
-            self.txt_monto.blockSignals(True)
-            self.txt_monto.setText(formatted)
-            self.txt_monto.blockSignals(False)
-            
-            # Ajustar posición del cursor
-            diff = len(formatted) - len(text)
-            self.txt_monto.setCursorPosition(cursor_pos + diff)
-        except Exception:
-            pass
+    # format_monto removido en favor de utils.formatting.aplicar_formato_moneda
 
     def agregar_pago(self):
         try:
-            monto_str = self.txt_monto.text().replace(',', '')
-            if not monto_str: return
+            moneda = self.combo_moneda.currentText()
+            monto_str = parsear_monto(self.txt_monto.text(), moneda)
+            if not monto_str or monto_str == "0": return
             
             monto_origen = Decimal(monto_str)
             if monto_origen <= 0: return
@@ -462,6 +431,11 @@ class PaymentDialog(QDialog):
             })
             
         self.resolver_cliente_final()
+        
+        total_recibido = sum([p['monto_pyg'] for p in self.payments_list])
+        faltante = self.total_adeudado_pyg - total_recibido
+        self.vuelto_devuelto_pyg = abs(faltante) if faltante < 0 else Decimal('0')
+        
         self.payment_successful = True
         self.accept()
 

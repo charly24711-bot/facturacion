@@ -1,10 +1,12 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
-                             QMenuBar, QMenu, QGridLayout, QLineEdit, QGroupBox, QCheckBox, QFrame, QCompleter, QTableView,
+                             QMenuBar, QMenu, QGridLayout, QLineEdit, QGroupBox, QCheckBox, QFrame, 
+                             QCompleter, QTableView, QFormLayout,
                              QComboBox, QMessageBox)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QFont, QAction, QColor, QPixmap
+from config_manager import ConfigManager
 
 import sys
 import os
@@ -33,7 +35,7 @@ class MainWindow(QMainWindow):
             "full_name": "Administrador General",
             "role": "ADMIN"
         }
-        self.setWindowTitle("Supermercado Central - Punto de Venta (POS)")
+        self.setWindowTitle("TRIFRONTERA STOCK - Punto de Venta (POS)")
         self.resize(1200, 800)
         
         # --- ARQUEO Y SESIÓN ---
@@ -46,111 +48,186 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # --- PANEL SUPERIOR ---
-        top_panel_layout = QHBoxLayout()
-        
-        # 1. Grilla Historial de Ventas (Izquierda)
-        self.table_historial = QTableWidget(0, 5)
-        self.table_historial.setHorizontalHeaderLabels(["Nro.", "Hora", "Cliente", "Total", "FacNº"])
-        self.table_historial.setFixedWidth(400)
-        self.table_historial.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table_historial.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table_historial.itemDoubleClicked.connect(self.ver_detalle_factura)
-        
-        top_panel_layout.addWidget(self.table_historial)
-        
-        # 2. Botones de Acción (Medio)
-        action_buttons_layout = QVBoxLayout()
-        
-        btn_articulo = QPushButton("Artículos")
-        btn_articulo.clicked.connect(self.open_product_management)
-        
-        btn_cliente = QPushButton("Clientes")
-        btn_cliente.clicked.connect(self.open_client_management)
-        
-        btn_caja = QPushButton("Caja")
-        btn_caja.clicked.connect(self.open_caja_dialog)
-        
-        btn_reporte_z = QPushButton("Cerrar Turno (Reporte Z)")
-        btn_reporte_z.setStyleSheet("background-color: darkred; color: white;")
-        btn_reporte_z.clicked.connect(self.open_reporte_z)
-        
-        action_buttons_layout.addWidget(btn_articulo)
-        action_buttons_layout.addWidget(btn_cliente)
-        action_buttons_layout.addWidget(btn_caja)
-        action_buttons_layout.addWidget(btn_reporte_z)
+        # --- ESTILOS DARK MODE GLOBALES ---
+        central_widget.setStyleSheet("""
+            QWidget {
+                background-color: #0f1117;
+                color: #a9b1d6;
+                font-family: 'Segoe UI', Arial;
+            }
+            QPushButton {
+                background-color: #1c2333;
+                border: 1px solid #2a3550;
+                border-radius: 4px;
+                padding: 6px 12px;
+                color: #a9b1d6;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2a3550;
+                color: #ffffff;
+            }
+            QLineEdit, QComboBox {
+                background-color: #131929;
+                border: 1px solid #2a3550;
+                border-radius: 4px;
+                padding: 4px 8px;
+                color: #a9b1d6;
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #7aa2f7;
+            }
+            QTableView, QTableWidget {
+                background-color: #131929;
+                alternate-background-color: #1c2333;
+                color: #a9b1d6;
+                gridline-color: #2a3550;
+                border: none;
+                selection-background-color: #2a3550;
+            }
+            QHeaderView::section {
+                background-color: #1c2333;
+                color: #7aa2f7;
+                padding: 4px;
+                border: 1px solid #2a3550;
+                font-weight: bold;
+            }
+            QGroupBox {
+                border: 1px solid #2a3550;
+                border-radius: 5px;
+                margin-top: 1ex;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 3px;
+                color: #7aa2f7;
+            }
+        """)
 
-        # Botón a Panel Administrativo (Visible para Admin/Gerente)
-        if self.current_user.get('role') in ('ADMIN', 'GERENTE'):
-            btn_admin = QPushButton("🏢 Panel Admin")
-            btn_admin.setStyleSheet("background-color: #1a237e; color: white; font-weight: bold;")
-            btn_admin.clicked.connect(self.open_admin_panel)
-            action_buttons_layout.addWidget(btn_admin)
+        # --- TOOLBAR SUPERIOR (Fina) ---
+        toolbar_widget = QWidget()
+        toolbar_widget.setStyleSheet("background-color: #1c2333; border-bottom: 1px solid #2a3550;")
+        toolbar_layout = QHBoxLayout(toolbar_widget)
+        toolbar_layout.setContentsMargins(10, 6, 10, 6)
+        toolbar_layout.setSpacing(15)
 
-        action_buttons_layout.addStretch()
-        
-        top_panel_layout.addLayout(action_buttons_layout)
-        
-        # 3. Cabecera de Factura Actual (Derecha)
-        cabecera_layout = QGridLayout()
-        
-        # Indicador de Red
+        # 1. Info Red & Fecha
         self.lbl_network_status = QLabel("🔴 Offline")
-        self.lbl_network_status.setStyleSheet("color: red; font-weight: bold; font-size: 14px;")
-        self.lbl_network_status.setAlignment(Qt.AlignmentFlag.AlignRight)
-        cabecera_layout.addWidget(self.lbl_network_status, 0, 5, 1, 2)
+        self.lbl_network_status.setStyleSheet("color: #f7768e; font-weight: bold; border: none; background: transparent;")
+        toolbar_layout.addWidget(self.lbl_network_status)
         
-        cabecera_layout.addWidget(QLabel("Fecha:"), 0, 0)
         from PyQt6.QtCore import QDate
-        date_edit = QLineEdit(QDate.currentDate().toString("dd-MM-yyyy"))
-        date_edit.setReadOnly(True)
-        cabecera_layout.addWidget(date_edit, 0, 1)
-        cabecera_layout.addWidget(QLabel("Fact.:"), 0, 2)
-        cabecera_layout.addWidget(QLineEdit("1/1"), 0, 3)
-        cabecera_layout.addWidget(QLabel("Nº: 4203"), 0, 4) # Resaltado en naranja en la imagen
-        
-        cabecera_layout.addWidget(QLabel("Cliente [F8]:"), 2, 0)
+        lbl_fecha = QLabel(f"📅 {QDate.currentDate().toString('dd-MM-yyyy')}")
+        lbl_fecha.setStyleSheet("color: #7aa2f7; font-weight: bold; border: none; background: transparent;")
+        toolbar_layout.addWidget(lbl_fecha)
+
+        # 2. Cliente y Vendedor
+        toolbar_layout.addWidget(QLabel("Cliente [F8]:"))
         self.txt_cliente = QLineEdit("002276 - DESPENSA SAN CAYETANO")
-        cabecera_layout.addWidget(self.txt_cliente, 2, 1, 1, 4)
-        
-        cabecera_layout.addWidget(QLabel("Vendedor:"), 3, 0)
+        self.txt_cliente.setFixedWidth(250)
+        toolbar_layout.addWidget(self.txt_cliente)
+
+        toolbar_layout.addWidget(QLabel("Vend:"))
         vendedor_text = f"{self.current_user['id']:03d} - {self.current_user['full_name']}"
         self.txt_vendedor = QLineEdit(vendedor_text)
-        cabecera_layout.addWidget(self.txt_vendedor, 3, 1, 1, 4)
-        
-        cabecera_layout.addWidget(QLabel("Canal Precio:"), 4, 0)
+        self.txt_vendedor.setFixedWidth(150)
+        self.txt_vendedor.setReadOnly(True)
+        toolbar_layout.addWidget(self.txt_vendedor)
+
+        toolbar_layout.addWidget(QLabel("Canal:"))
         self.cmb_canal_precio = QComboBox()
-        self.cmb_canal_precio.setStyleSheet("font-weight: bold; padding: 2px 4px; background-color: #f1f5f9; color: #0f172a;")
         self.cargar_canales_precios()
         self.cmb_canal_precio.currentIndexChanged.connect(self.on_canal_precio_changed)
-        cabecera_layout.addWidget(self.cmb_canal_precio, 4, 1, 1, 4)
-        
-        group_cabecera = QGroupBox("Datos Factura")
-        group_cabecera.setLayout(cabecera_layout)
-        top_panel_layout.addWidget(group_cabecera, stretch=1)
-        
-        main_layout.addLayout(top_panel_layout, stretch=1)
-        
-        # --- BUSCADOR / ESCANER DE CÓDIGO DE BARRAS ---
-        scanner_layout = QHBoxLayout()
-        scanner_layout.addWidget(QLabel("Código de Barras / Artículo:"))
+        toolbar_layout.addWidget(self.cmb_canal_precio)
+
+        toolbar_layout.addStretch()
+
+        # 3. Botones de Acción
+        btn_articulo = QPushButton("📦 Artículos")
+        btn_articulo.clicked.connect(self.open_product_management)
+        toolbar_layout.addWidget(btn_articulo)
+
+        btn_caja = QPushButton("💵 Caja")
+        btn_caja.clicked.connect(self.open_caja_dialog)
+        toolbar_layout.addWidget(btn_caja)
+
+        btn_reporte_z = QPushButton("🔒 Cerrar Turno")
+        btn_reporte_z.setStyleSheet("color: #f7768e; border-color: #f7768e;")
+        btn_reporte_z.clicked.connect(self.open_reporte_z)
+        toolbar_layout.addWidget(btn_reporte_z)
+
+        if self.current_user.get('role') in ('ADMIN', 'GERENTE'):
+            btn_admin = QPushButton("🏢 Panel Admin")
+            btn_admin.setStyleSheet("color: #7aa2f7; border-color: #7aa2f7;")
+            btn_admin.clicked.connect(self.open_admin_panel)
+            toolbar_layout.addWidget(btn_admin)
+
+        main_layout.addWidget(toolbar_widget)
+
+        # Elementos Ocultos (Historial y lbl extra)
+        self.table_historial = QTableWidget(0, 5)
+        self.table_historial.setVisible(False)
+        self.lbl_canal_precio = QLabel("Canal Precio:")
+        self.lbl_canal_precio.setVisible(False)
+
+        # --- BUSCADOR / ESCANER GIGANTE ---
+        scanner_widget = QWidget()
+        scanner_widget.setStyleSheet("background-color: #0f1117;")
+        scanner_layout = QHBoxLayout(scanner_widget)
+        scanner_layout.setContentsMargins(15, 15, 15, 10)
+        scanner_layout.setSpacing(10)
+
+        lbl_scan = QLabel("🛒")
+        lbl_scan.setStyleSheet("font-size: 28px; background: transparent; border: none;")
+        scanner_layout.addWidget(lbl_scan)
+
         self.txt_codigo = QLineEdit()
-        self.txt_codigo.setPlaceholderText("Escanee el código de barras y presione ENTER")
+        self.txt_codigo.setPlaceholderText("ESCANEE EL CÓDIGO DE BARRAS AQUÍ O INGRESE EL ARTÍCULO...")
+        self.txt_codigo.setStyleSheet("""
+            QLineEdit {
+                background-color: #131929;
+                border: 2px solid #7aa2f7;
+                border-radius: 8px;
+                padding: 10px 15px;
+                font-size: 24px;
+                font-weight: bold;
+                color: #9ece6a;
+            }
+            QLineEdit:focus {
+                border: 2px solid #9ece6a;
+                background-color: #1c2333;
+            }
+        """)
         self.txt_codigo.returnPressed.connect(self.buscar_producto)
         scanner_layout.addWidget(self.txt_codigo, stretch=1)
-        
-        btn_buscar = QPushButton("Buscar [F4]")
+
+        btn_buscar = QPushButton("🔍 Buscar [F4]")
+        btn_buscar.setStyleSheet("""
+            QPushButton {
+                background-color: #1a237e;
+                border: 2px solid #7aa2f7;
+                border-radius: 8px;
+                padding: 10px 20px;
+                font-size: 18px;
+                font-weight: bold;
+                color: #ffffff;
+            }
+            QPushButton:hover { background-color: #283593; }
+        """)
         btn_buscar.clicked.connect(self.open_product_search)
         scanner_layout.addWidget(btn_buscar)
-        
-        self.chk_visor = QCheckBox("Ocultar Visor de Producto")
-        self.chk_visor.setChecked(False)
+
+        self.chk_visor = QCheckBox("Mostrar Visor Lateral")
+        self.chk_visor.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.chk_visor.setChecked(False) # <--- Default oculto
         self.chk_visor.toggled.connect(self.toggle_visor_producto)
         scanner_layout.addWidget(self.chk_visor)
-        
-        main_layout.addLayout(scanner_layout)
+
+        main_layout.addWidget(scanner_widget)
         
         # --- PANEL CENTRAL (Detalle de Factura) ---
         central_panel_layout = QHBoxLayout()
@@ -160,13 +237,62 @@ class MainWindow(QMainWindow):
         self.ventas_model = VentasTableModel(current_role=user_role)
         self.ventas_model.qty_changed_for_tier.connect(self.on_qty_changed_tier)
         self.table_detalle.setModel(self.ventas_model)
-        self.table_detalle.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        for i in range(self.ventas_model.columnCount()):
+            self.table_detalle.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+        
+        # Anchos de columnas
+        self.table_detalle.setColumnWidth(0, 45)   # Nro
+        self.table_detalle.setColumnWidth(1, 130)  # Codigo
+        self.table_detalle.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch) # Descripcion
+        self.table_detalle.setColumnWidth(3, 40)   # Dp
+        self.table_detalle.setColumnWidth(4, 85)   # Cantidad
+        self.table_detalle.setColumnWidth(5, 55)   # Imp
+        self.table_detalle.setColumnWidth(6, 85)   # Iva
+        self.table_detalle.setColumnWidth(7, 100)  # Precio
+        self.table_detalle.setColumnWidth(8, 70)   # Desc %
+        self.table_detalle.setColumnWidth(9, 110)  # Total
+        
+        # Altura de filas y fuente grande
+        self.table_detalle.verticalHeader().setDefaultSectionSize(36)
+        self.table_detalle.verticalHeader().setVisible(False)
+        table_font = QFont("Segoe UI", 13)
+        self.table_detalle.setFont(table_font)
+        header_font = QFont("Segoe UI", 13, QFont.Weight.Bold)
+        self.table_detalle.horizontalHeader().setFont(header_font)
+        self.table_detalle.horizontalHeader().setMinimumHeight(38)
+        
+        # Estilo tabla dark
+        self.table_detalle.setStyleSheet("""
+            QTableView {
+                background-color: #1c2333;
+                alternate-background-color: #232d3f;
+                color: #e0e0e0;
+                gridline-color: #2a3550;
+                border: none;
+                font-size: 13px;
+            }
+            QTableView::item:selected {
+                background-color: #2e4a7a;
+                color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #131929;
+                color: #ffffff;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 5px;
+                border: none;
+                border-bottom: 2px solid #2a3550;
+            }
+        """)
+        self.table_detalle.setAlternatingRowColors(True)
+        
         self.ventas_model.dataChanged.connect(self.calcular_totales)
         self.table_detalle.selectionModel().selectionChanged.connect(lambda *args: self.update_product_view())
         self.table_detalle.clicked.connect(lambda *args: self.update_product_view())
         self.table_detalle.itemDelegate().closeEditor.connect(self.focus_codigo)
         
-        central_panel_layout.addWidget(self.table_detalle, stretch=3)
+        central_panel_layout.addWidget(self.table_detalle, stretch=5)
         
         # --- VISOR DE PRODUCTO ---
         self.product_view_panel = QGroupBox("Detalle de Producto")
@@ -211,198 +337,263 @@ class MainWindow(QMainWindow):
         
         central_panel_layout.addWidget(self.product_view_panel)
         
-        main_layout.addLayout(central_panel_layout, stretch=2)
+        main_layout.addLayout(central_panel_layout, stretch=5)
         
         # --- PANEL INFERIOR ---
         bottom_panel_layout = QHBoxLayout()
         
-        # 1. Panel de Liquidación de IVA (Ley 6380/19) y Atajos de Caja
-        panel_fiscal = QGroupBox("📋 Liquidación I.V.A. (Ley 6380/19)")
-        panel_fiscal.setFixedWidth(340)
-        panel_fiscal.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                font-size: 11px;
-                border: 2px solid #1a237e;
-                border-radius: 6px;
-                margin-top: 6px;
-                background-color: #ffffff;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-                color: #1a237e;
-            }
-            QLabel {
-                font-size: 11px;
+        # PANEL INFERIOR — 3 TARJETAS DARK GLASSMORPHISM
+        main_bottom_widget = QWidget()
+        main_bottom_widget.setStyleSheet("""
+            QWidget#bottomPanel {
+                background-color: #0f1117;
             }
         """)
+        main_bottom_widget.setObjectName("bottomPanel")
         
-        fiscal_layout = QVBoxLayout(panel_fiscal)
-        fiscal_layout.setContentsMargins(8, 10, 8, 6)
-        fiscal_layout.setSpacing(3)
-        
-        grid_iva = QGridLayout()
-        grid_iva.setHorizontalSpacing(8)
-        grid_iva.setVerticalSpacing(2)
-        
-        # Fila 0: Gravada 10% e IVA 10%
-        grid_iva.addWidget(QLabel("Grav. 10%:"), 0, 0)
-        self.lbl_gravada_10 = QLabel("0")
-        self.lbl_gravada_10.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_gravada_10.setStyleSheet("font-weight: bold; color: #37474f;")
-        grid_iva.addWidget(self.lbl_gravada_10, 0, 1)
-        
-        grid_iva.addWidget(QLabel("IVA 10%:"), 0, 2)
-        self.lbl_iva_10 = QLabel("0")
-        self.lbl_iva_10.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_iva_10.setStyleSheet("font-weight: bold; color: #1565c0;")
-        grid_iva.addWidget(self.lbl_iva_10, 0, 3)
-        
-        # Fila 1: Gravada 5% e IVA 5%
-        grid_iva.addWidget(QLabel("Grav. 5%:"), 1, 0)
-        self.lbl_gravada_5 = QLabel("0")
-        self.lbl_gravada_5.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_gravada_5.setStyleSheet("font-weight: bold; color: #37474f;")
-        grid_iva.addWidget(self.lbl_gravada_5, 1, 1)
-        
-        grid_iva.addWidget(QLabel("IVA 5%:"), 1, 2)
+        main_bottom_layout = QHBoxLayout(main_bottom_widget)
+        main_bottom_layout.setContentsMargins(12, 12, 12, 12)
+        main_bottom_layout.setSpacing(12)
+
+        CARD_STYLE = """
+            QWidget {
+                background-color: #1c2333;
+                border-radius: 10px;
+            }
+            QLabel {
+                background: transparent;
+                border: none;
+                font-family: 'Segoe UI', Arial;
+                font-size: 14px;
+                color: #a9b1d6;
+                font-weight: 600;
+            }
+            QLabel[is_value="true"] {
+                color: #9ece6a;
+                background-color: #131929;
+                border: 1px solid #2a3550;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-size: 22px;
+                font-family: 'Consolas', 'Segoe UI', monospace;
+                font-weight: bold;
+                min-width: 130px;
+            }
+        """
+        # Estilo compacto para la tarjeta de monedas (valores mas chicos)
+        CARD_STYLE_COMPACT = """
+            QWidget {
+                background-color: #1c2333;
+                border-radius: 10px;
+            }
+            QLabel {
+                background: transparent;
+                border: none;
+                font-family: 'Segoe UI', Arial;
+                font-size: 13px;
+                color: #a9b1d6;
+                font-weight: 600;
+            }
+            QLabel[is_value="true"] {
+                color: #9ece6a;
+                background-color: #131929;
+                border: 1px solid #2a3550;
+                border-radius: 4px;
+                padding: 3px 8px;
+                font-size: 14px;
+                font-family: 'Consolas', 'Segoe UI', monospace;
+                font-weight: bold;
+                min-width: 75px;
+                max-width: 100px;
+            }
+        """
+        BTN_STYLE_GUARDAR = "background-color:#1e3a5f; color:#7aa2f7; border:1px solid #3b5998; border-radius:6px; padding:8px 14px; font-weight:bold; font-size:13px;"
+        BTN_STYLE_CANCELAR = "background-color:#3d1a1a; color:#f7768e; border:1px solid #7f2a2a; border-radius:6px; padding:8px 14px; font-weight:bold; font-size:13px;"
+        BTN_STYLE_SALIR = "background-color:#24283b; color:#c0caf5; border:1px solid #414868; border-radius:6px; padding:8px 14px; font-weight:bold; font-size:13px;"
+
+        # ── TARJETA 1: Impuestos y subtotales ──
+        card1 = QWidget()
+        card1.setStyleSheet(CARD_STYLE)
+        card1_layout = QFormLayout(card1)
+        card1_layout.setContentsMargins(14, 10, 14, 10)
+        card1_layout.setSpacing(8)
+        card1_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.lbl_subtotal = QLabel("0")
+        self.lbl_subtotal.setProperty("is_value", True)
+        self.lbl_recargo = QLabel("0")
+        self.lbl_recargo.setProperty("is_value", True)
         self.lbl_iva_5 = QLabel("0")
-        self.lbl_iva_5.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_iva_5.setStyleSheet("font-weight: bold; color: #00897b;")
-        grid_iva.addWidget(self.lbl_iva_5, 1, 3)
-        
-        # Fila 2: Exentas y Total IVA
-        grid_iva.addWidget(QLabel("Exentas:"), 2, 0)
-        self.lbl_exenta = QLabel("0")
-        self.lbl_exenta.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_exenta.setStyleSheet("font-weight: bold; color: #546e7a;")
-        grid_iva.addWidget(self.lbl_exenta, 2, 1)
-        
-        grid_iva.addWidget(QLabel("Total IVA:"), 2, 2)
+        self.lbl_iva_5.setProperty("is_value", True)
+        self.lbl_iva_10 = QLabel("0")
+        self.lbl_iva_10.setProperty("is_value", True)
         self.lbl_total_iva = QLabel("0")
-        self.lbl_total_iva.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_total_iva.setStyleSheet("font-weight: bold; color: #c62828; font-size: 12px;")
-        grid_iva.addWidget(self.lbl_total_iva, 2, 3)
-        
-        fiscal_layout.addLayout(grid_iva)
-        
-        # Separador
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        fiscal_layout.addWidget(line)
-        
-        # Botonera de Atajos Rápidos de Caja
-        shortcuts_layout = QHBoxLayout()
-        shortcuts_layout.setSpacing(4)
-        
-        btn_f2 = QPushButton("🔍 [F2] Buscar")
-        btn_f2.setStyleSheet("background-color: #e3f2fd; color: #0d47a1; font-weight: bold; padding: 4px; font-size: 10px;")
-        btn_f2.clicked.connect(self.open_product_search)
-        
-        btn_f8 = QPushButton("👤 [F8] RUC")
-        btn_f8.setStyleSheet("background-color: #e8f5e9; color: #1b5e20; font-weight: bold; padding: 4px; font-size: 10px;")
-        btn_f8.clicked.connect(self.open_client_search)
-        
-        btn_f5 = QPushButton("📋 [F5] Presup.")
-        btn_f5.setStyleSheet("background-color: #e1f5fe; color: #0277bd; font-weight: bold; padding: 4px; font-size: 10px;")
-        btn_f5.clicked.connect(self.abrir_buscar_presupuesto)
-        
-        btn_f7 = QPushButton("💸 [F7] Sangría")
-        btn_f7.setStyleSheet("background-color: #e0f2f1; color: #004d40; font-weight: bold; padding: 4px; font-size: 10px;")
-        btn_f7.clicked.connect(self.open_caja_movimiento)
-        
-        btn_f9 = QPushButton("🚫 [F9] Anular")
-        btn_f9.setStyleSheet("background-color: #ffebee; color: #b71c1c; font-weight: bold; padding: 4px; font-size: 10px;")
-        btn_f9.clicked.connect(self.cancelar_venta_actual)
+        self.lbl_total_iva.setProperty("is_value", True)
+        self.lbl_nota_debito = QLabel("0")
+        self.lbl_nota_debito.setProperty("is_value", True)
 
-        btn_f10 = QPushButton("📊 [F10] Caja")
-        btn_f10.setStyleSheet("background-color: #fff3e0; color: #e65100; font-weight: bold; padding: 4px; font-size: 10px;")
-        btn_f10.clicked.connect(self.open_reporte_z)
+        card1_layout.addRow("Subtotal:", self.lbl_subtotal)
+        card1_layout.addRow("Recargo:", self.lbl_recargo)
+        card1_layout.addRow("IVA 5%:", self.lbl_iva_5)
+        card1_layout.addRow("IVA 10%:", self.lbl_iva_10)
+        card1_layout.addRow("Total IVA:", self.lbl_total_iva)
+        card1_layout.addRow("Nota Débito:", self.lbl_nota_debito)
 
-        btn_f12 = QPushButton("⏸️ [F12] Pausa")
-        btn_f12.setStyleSheet("background-color: #f1f5f9; color: #1e293b; font-weight: bold; padding: 4px; font-size: 10px;")
-        btn_f12.clicked.connect(self.pausar_terminal)
-        
-        shortcuts_layout.addWidget(btn_f2)
-        shortcuts_layout.addWidget(btn_f5)
-        shortcuts_layout.addWidget(btn_f7)
-        shortcuts_layout.addWidget(btn_f8)
-        shortcuts_layout.addWidget(btn_f9)
-        shortcuts_layout.addWidget(btn_f10)
-        shortcuts_layout.addWidget(btn_f12)
-        fiscal_layout.addLayout(shortcuts_layout)
-        
-        bottom_panel_layout.addWidget(panel_fiscal)
-        
-        # 2. Botones de Cierre y Operaciones de POS (Centro)
-        cierre_layout = QVBoxLayout()
-        cierre_layout.addStretch()
-        
-        btn_quitar_item = QPushButton("❌ Quitar Ítem [Supr]")
-        btn_quitar_item.setStyleSheet("background-color: #ffebee; color: #b71c1c; font-weight: bold; border: 1px solid #ef9a9a; padding: 5px;")
-        btn_quitar_item.clicked.connect(self.quitar_item_seleccionado)
+        # ── TARJETA 2: Descuento + Total General ──
+        card2 = QWidget()
+        card2.setStyleSheet(CARD_STYLE)
+        card2_layout = QVBoxLayout(card2)
+        card2_layout.setContentsMargins(18, 14, 18, 14)
+        card2_layout.setSpacing(10)
 
-        btn_cancelar_venta = QPushButton("🚫 Cancelar Venta [F9]")
-        btn_cancelar_venta.setStyleSheet("background-color: #c62828; color: white; font-weight: bold; padding: 5px;")
-        btn_cancelar_venta.clicked.connect(self.cancelar_venta_actual)
+        # campos secundarios (ocultos, necesarios para cálculos)
+        self.lbl_iv_incl = QLabel("0")
+        self.lbl_total_iva_2 = QLabel("0")
 
-        btn_sangria = QPushButton("💸 Movimiento/Sangría [F7]")
-        btn_sangria.setStyleSheet("background-color: #00695c; color: white; font-weight: bold; padding: 5px;")
-        btn_sangria.clicked.connect(self.open_caja_movimiento)
+        self.lbl_descuento = QLabel("0")
+        self.lbl_descuento.setProperty("is_value", True)
+        desc_row = QHBoxLayout()
+        lbl_desc_title = QLabel("Descuento:")
+        desc_row.addWidget(lbl_desc_title)
+        desc_row.addWidget(self.lbl_descuento)
+        card2_layout.addLayout(desc_row)
 
-        btn_cargar_presupuesto = QPushButton("Cargar Presupuesto [F5]")
-        btn_cargar_presupuesto.setStyleSheet("background-color: #f57c00; color: white; font-weight: bold; padding: 5px;")
-        btn_cargar_presupuesto.clicked.connect(self.abrir_buscar_presupuesto)
-        
-        btn_presupuesto = QPushButton("Presupuesto [F6]")
-        btn_presupuesto.setStyleSheet("background-color: #0288d1; color: white; font-weight: bold; padding: 5px;")
-        btn_presupuesto.clicked.connect(self.procesar_presupuesto)
-        
-        btn_factura = QPushButton("Cobrar/Factura [F11]")
-        btn_factura.setStyleSheet("background-color: green; color: white; font-weight: bold; padding: 10px; font-size: 13px;")
-        btn_factura.clicked.connect(self.procesar_factura)
-        
-        cierre_layout.addWidget(btn_quitar_item)
-        cierre_layout.addWidget(btn_cancelar_venta)
-        cierre_layout.addWidget(btn_sangria)
-        cierre_layout.addWidget(btn_cargar_presupuesto)
-        cierre_layout.addWidget(btn_presupuesto)
-        cierre_layout.addWidget(btn_factura)
-        cierre_layout.addStretch()
-        bottom_panel_layout.addLayout(cierre_layout)
-        
-        # 3. Totales (Derecha - Fondo Púrpura)
-        totals_widget = QWidget()
-        totals_layout = QGridLayout(totals_widget)
-        totals_widget.setStyleSheet("background-color: #800080; color: white; border: 1px solid black;")
-        
-        font_totals = QFont("Arial", 16, QFont.Weight.Bold)
-        
-        # Monedas
-        self.lbl_usd = QLabel("8.46") # USD
-        self.lbl_brl = QLabel("42.30") # BRL
-        self.lbl_ars = QLabel("68,750.0") # ARS
-        self.lbl_pyg = QLabel("55,000") # PYG
-        
-        flags = ["USD", "BRL", "ARS", "PYG"]
-        labels = [self.lbl_usd, self.lbl_brl, self.lbl_ars, self.lbl_pyg]
-        
-        for i, (flag, lbl) in enumerate(zip(flags, labels)):
-            lbl.setFont(font_totals)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-            totals_layout.addWidget(QLabel(flag), i, 0)
-            totals_layout.addWidget(lbl, i, 1)
-            
-        totals_layout.addWidget(QLabel("Total Gral.:"), 3, 2)
+        self.lbl_iv_incl.setProperty("is_value", True)
+        iva_row = QHBoxLayout()
+        lbl_iva_title = QLabel("Total IVA:")
+        iva_row.addWidget(lbl_iva_title)
+        iva_row.addWidget(self.lbl_iv_incl)
+        card2_layout.addLayout(iva_row)
+
+        card2_layout.addStretch()
+
+        lbl_total_title = QLabel("TOTAL GENERAL")
+        lbl_total_title.setStyleSheet("font-size:13px; color:#7aa2f7; font-weight:bold; background:transparent; border:none;")
+        lbl_total_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card2_layout.addWidget(lbl_total_title)
+
         self.lbl_total_gral = QLabel("0")
-        self.lbl_total_gral.setFont(QFont("Arial", 20, QFont.Weight.Bold))
-        totals_layout.addWidget(self.lbl_total_gral, 3, 3)
+        self.lbl_total_gral.setProperty("is_value", True)
+        self.lbl_total_gral.setStyleSheet("color:#e0e0e0; font-size:34px; font-weight:bold; background-color:#101014; border:1px solid #2a3550; border-radius:8px; padding:10px 20px; min-width:200px;")
+        self.lbl_total_gral.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card2_layout.addWidget(self.lbl_total_gral)
+
+        lbl_vuelto_title = QLabel("VUELTO")
+        lbl_vuelto_title.setStyleSheet("font-size:13px; color:#f7768e; font-weight:bold; background:transparent; border:none;")
+        lbl_vuelto_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card2_layout.addWidget(lbl_vuelto_title)
+
+        self.lbl_vuelto = QLabel("0")
+        self.lbl_vuelto.setProperty("is_value", True)
+        self.lbl_vuelto.setStyleSheet("color:#f7768e; font-size:30px; font-weight:bold; background-color:#101014; border:1px solid #f7768e; border-radius:8px; padding:6px 20px; min-width:200px;")
+        self.lbl_vuelto.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card2_layout.addWidget(self.lbl_vuelto)
+
+        # ── TARJETA 3: Monedas + Botones ──
+        card3 = QWidget()
+        card3.setStyleSheet(CARD_STYLE_COMPACT)
+        card3_layout = QVBoxLayout(card3)
+        card3_layout.setContentsMargins(14, 10, 14, 10)
+        card3_layout.setSpacing(8)
+
+        # Crear labels de monedas ANTES de usarlos
+        self.lbl_usd = QLabel("0.00")
+        self.lbl_brl = QLabel("0.00")
+        self.lbl_ars = QLabel("0.00")
+        self.lbl_pyg = QLabel("0")
+
+        CURRENCY_VALUE_STYLE = (
+            "color: #9ece6a;"
+            "background-color: #131929;"
+            "border: 1px solid #2a3550;"
+            "border-radius: 6px;"
+            "padding: 10px 20px;"
+            "font-size: 26px;"
+            "font-family: 'Consolas', monospace;"
+            "font-weight: bold;"
+            "min-width: 150px;"
+        )
+        for lbl in [self.lbl_usd, self.lbl_brl, self.lbl_ars, self.lbl_pyg]:
+            lbl.setStyleSheet(CURRENCY_VALUE_STYLE)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        def load_flag(filename):
+            """Carga una bandera PNG desde assets/flags/"""
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            path = os.path.join(base, "assets", "flags", filename)
+            px = QPixmap(path)
+            if px.isNull():
+                px = QPixmap(32, 22)
+                px.fill(QColor("#444"))
+            return px.scaled(32, 22, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+        def make_currency_row(flag_px, text, value_lbl):
+            """Bandera | Etiqueta | Valor — sin espacio entre ellos"""
+            row_w = QWidget()
+            row_w.setStyleSheet("background: transparent;")
+            row_layout = QHBoxLayout(row_w)
+            row_layout.setContentsMargins(4, 3, 4, 3)
+            row_layout.setSpacing(6)
+            lbl_flag = QLabel()
+            lbl_flag.setPixmap(flag_px)
+            lbl_flag.setFixedSize(32, 22)
+            lbl_flag.setStyleSheet("background: transparent; border: none;")
+            lbl_text = QLabel(text)
+            lbl_text.setFixedWidth(40)
+            lbl_text.setStyleSheet("background: transparent; border: none; color: #a9b1d6; font-weight: 600; font-size: 13px;")
+            row_layout.addWidget(lbl_flag)
+            row_layout.addWidget(lbl_text)
+            row_layout.addWidget(value_lbl)
+            row_layout.addStretch(0)
+            return row_w
+
+        flag_us = load_flag("flag_us.png")
+        flag_br = load_flag("flag_br.png")
+        flag_ar = load_flag("flag_ar.png")
+        flag_py = load_flag("flag_py.png")
+
+        card3_layout.addWidget(make_currency_row(flag_us, "USD:", self.lbl_usd))
+        card3_layout.addWidget(make_currency_row(flag_br, "BRL:", self.lbl_brl))
+        card3_layout.addWidget(make_currency_row(flag_ar, "ARS:", self.lbl_ars))
+        card3_layout.addWidget(make_currency_row(flag_py, "PYG:", self.lbl_pyg))
+        card3_layout.addStretch()
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_guardar = QPushButton("💾 Guardar")
+        btn_guardar.setStyleSheet(BTN_STYLE_GUARDAR)
+        btn_guardar.clicked.connect(self.procesar_factura)
+        btn_cancelar = QPushButton("✖ Cancelar")
+        btn_cancelar.setStyleSheet(BTN_STYLE_CANCELAR)
+        btn_cancelar.clicked.connect(self.cancelar_venta_actual)
+        btn_salir = QPushButton("🚪 Salir")
+        btn_salir.setStyleSheet(BTN_STYLE_SALIR)
+        btn_salir.clicked.connect(self.close)
+        btn_row.addWidget(btn_guardar)
+        btn_row.addWidget(btn_cancelar)
+        btn_row.addWidget(btn_salir)
+        card3_layout.addLayout(btn_row)
+
+        # Ensamblar 3 tarjetas
+        main_bottom_layout.addWidget(card1, stretch=3)
+        main_bottom_layout.addWidget(card2, stretch=2)
+        main_bottom_layout.addWidget(card3, stretch=3)
         
-        bottom_panel_layout.addWidget(totals_widget, stretch=1)
+        # Variables de compatibilidad para evitar crashes en otras funciones
+        self.lbl_gravada_10 = QLabel("0")
+        self.lbl_gravada_5 = QLabel("0")
+        self.lbl_exenta = QLabel("0")
+        # Botones de presupuesto/sangría ocultos (compatibilidad con apply_environment_config)
+        self.btn_presupuesto = QPushButton("Presup.")
+        self.btn_presupuesto.setVisible(False)
+        self.btn_presupuesto.clicked.connect(self.abrir_buscar_presupuesto)
+        self.btn_f5_shortcut = self.btn_presupuesto
+        btn_sangria_hidden = QPushButton("Sangría")
+        btn_sangria_hidden.setVisible(False)
+        btn_sangria_hidden.clicked.connect(self.open_caja_movimiento)
+        btn_sangria_hidden.setParent(main_bottom_widget)
         
+        bottom_panel_layout.addWidget(main_bottom_widget)
         main_layout.addLayout(bottom_panel_layout, stretch=1)
         
         self.cargar_historial_ventas()
@@ -412,6 +603,22 @@ class MainWindow(QMainWindow):
         self.sync_worker = SyncWorker()
         self.sync_worker.status_changed.connect(self.update_network_status)
         self.sync_worker.start()
+        
+        self.apply_environment_config()
+
+    def apply_environment_config(self):
+        # Canales de Precio
+        show_channels = ConfigManager.is_enabled("ui_show_price_channels")
+        self.cmb_canal_precio.setVisible(show_channels)
+        self.lbl_canal_precio.setVisible(show_channels)
+        
+        # Presupuestos
+        show_budgets = ConfigManager.is_enabled("mod_budgets")
+        self.btn_f5_shortcut.setVisible(show_budgets)
+        self.btn_presupuesto.setVisible(show_budgets)
+        
+        # Multimoneda (Fijo para Triple Frontera)
+        pass
 
     def update_network_status(self, is_online):
         if is_online:
@@ -453,6 +660,8 @@ class MainWindow(QMainWindow):
             self.open_client_search()
         elif event.key() in (Qt.Key.Key_F2, Qt.Key.Key_F4):
             self.open_product_search()
+        elif event.key() == Qt.Key.Key_F3:
+            self.aplicar_descuento_global()
         elif event.key() == Qt.Key.Key_F5:
             self.abrir_buscar_presupuesto()
         elif event.key() == Qt.Key.Key_F6:
@@ -504,6 +713,11 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             if dialog.payment_successful:
                 cliente_a_facturar = getattr(dialog, 'selected_client', cliente)
+                
+                # Mostrar Vuelto en Pantalla Principal
+                vuelto_pyg = getattr(dialog, 'vuelto_devuelto_pyg', Decimal('0'))
+                self.lbl_vuelto.setText(f"{int(vuelto_pyg):,}")
+                
                 self.guardar_venta_db(dialog.payments_list, cliente_a_facturar)
                 
     def guardar_venta_db(self, payments_list, cliente=None):
@@ -681,14 +895,7 @@ class MainWindow(QMainWindow):
         self.table_historial.setSortingEnabled(True)
         db.close()
         
-    def ver_detalle_factura(self, item):
-        row = item.row()
-        invoice_id = self.table_historial.item(row, 0).data(Qt.ItemDataRole.UserRole)
-        
-        from ui.invoice_detail_dialog import InvoiceDetailDialog
-        dialog = InvoiceDetailDialog(invoice_id, self)
-        dialog.exec()
-            
+
     def open_client_search(self):
         from ui.client_search_dialog import ClientSearchDialog
         dialog = ClientSearchDialog(self)
@@ -776,11 +983,32 @@ class MainWindow(QMainWindow):
             if curr.isValid():
                 indexes = [curr]
         if indexes:
-            row = indexes[0].row()
-            if 0 <= row < self.ventas_model.rowCount():
-                self.ventas_model.remove_item(row)
-                self.calcular_totales()
-                self.update_product_view()
+            for idx in sorted(indexes, reverse=True):
+                self.ventas_model.remove_item(idx.row())
+            self.calcular_totales()
+            self.update_product_view()
+            
+    def aplicar_descuento_global(self):
+        from PyQt6.QtWidgets import QInputDialog
+        if self.ventas_model.rowCount() == 0:
+            return
+            
+        desc, ok = QInputDialog.getDouble(
+            self, "Descuento Global", 
+            "Ingrese porcentaje de descuento (0-100):",
+            0.0, 0.0, 100.0, 2
+        )
+        if ok:
+            for row in range(self.ventas_model.rowCount()):
+                self.ventas_model.items[row]['descuento'] = Decimal(str(desc))
+                self.ventas_model._recalcular_fila(row)
+            
+            # Emitir cambio de toda la tabla para refrescar totales
+            self.ventas_model.dataChanged.emit(
+                self.ventas_model.index(0, 0),
+                self.ventas_model.index(self.ventas_model.rowCount() - 1, self.ventas_model.columnCount() - 1)
+            )
+            self.calcular_totales()
 
     def cancelar_venta_actual(self):
         """Cancela (vacía) el carrito activo con confirmación [F9]."""
@@ -794,6 +1022,7 @@ class MainWindow(QMainWindow):
         if resp == QMessageBox.StandardButton.Yes:
             self.ventas_model.clear()
             self.txt_cliente.setText("")
+            self.lbl_vuelto.setText("0")
             self.calcular_totales()
             self.update_product_view()
             self.txt_codigo.setFocus()
@@ -820,16 +1049,16 @@ class MainWindow(QMainWindow):
         if row < 0 and item:
             row = item.row()
         if row >= 0:
-            fac_item = self.table_historial.item(row, 4) or self.table_historial.item(row, 0)
-            if fac_item:
-                txt = fac_item.text().replace('#', '').strip()
-                try:
-                    invoice_id = int(txt)
-                    from ui.invoice_detail_dialog import InvoiceDetailDialog
-                    dlg = InvoiceDetailDialog(invoice_id, self)
-                    dlg.exec()
-                except Exception as e:
-                    print(f"Error abriendo detalle de factura: {e}")
+            item_nro = self.table_historial.item(row, 0)
+            if item_nro:
+                invoice_id = item_nro.data(Qt.ItemDataRole.UserRole)
+                if invoice_id:
+                    try:
+                        from ui.invoice_detail_dialog import InvoiceDetailDialog
+                        dlg = InvoiceDetailDialog(invoice_id, self)
+                        dlg.exec()
+                    except Exception as e:
+                        print(f"Error abriendo detalle de factura: {e}")
                 
     def buscar_producto(self):
         texto_busqueda = self.txt_codigo.text().strip()
@@ -946,6 +1175,9 @@ class MainWindow(QMainWindow):
         return Decimal('0'), None
 
     def add_product_to_grid(self, product, cantidad=Decimal('1')):
+        if self.ventas_model.rowCount() == 0:
+            self.lbl_vuelto.setText("0")
+            
         from database import format_stock_qty
         stock_actual = _safe_dec(product.art_stkini or 0)
         
@@ -1039,7 +1271,17 @@ class MainWindow(QMainWindow):
             
         total_iva = iva_10 + iva_5
         
-        if hasattr(self, 'lbl_gravada_10'):
+        if hasattr(self, 'lbl_subtotal'):
+            self.lbl_subtotal.setText(f"{total_pyg:,.0f}")
+            self.lbl_iva_10.setText(f"{iva_10:,.0f}")
+            self.lbl_iva_5.setText(f"{iva_5:,.0f}")
+            self.lbl_total_iva.setText(f"{total_iva:,.0f}")
+            self.lbl_total_iva_2.setText(f"{total_iva:,.0f}")
+            self.lbl_iv_incl.setText(f"{total_pyg:,.0f}")
+            self.lbl_descuento.setText("0")
+            self.lbl_recargo.setText("0")
+            self.lbl_nota_debito.setText("0")
+        elif hasattr(self, 'lbl_gravada_10'):
             self.lbl_gravada_10.setText(f"{gravada_10:,.0f}")
             self.lbl_iva_10.setText(f"{iva_10:,.0f}")
             self.lbl_gravada_5.setText(f"{gravada_5:,.0f}")
@@ -1282,6 +1524,7 @@ class MainWindow(QMainWindow):
             
     def open_cotizacion_dialog(self):
         from ui.cotizacion_dialog import CotizacionDialog
+        from config_manager import ConfigManager
         dialog = CotizacionDialog(self)
         dialog.exec()
         

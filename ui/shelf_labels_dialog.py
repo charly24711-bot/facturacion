@@ -234,9 +234,9 @@ class ShelfLabelsDialog(QDialog):
                 self.todos_los_productos.append({
                     "art_codigo": str(p.art_codigo),
                     "art_descri": str(p.art_descri or ""),
-                    "art_codbar": str(p.art_codbar or p.art_codigo or ""),
+                    "art_codbar": str(p.art_cbarra or p.art_codigo or ""),
                     "art_preven": Decimal(str(p.art_preven or "0")),
-                    "art_stkact": Decimal(str(p.art_stkact or "0")),
+                    "art_stkact": Decimal(str(p.stock_actual or "0")),
                 })
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error cargando catálogo: {e}")

@@ -374,6 +374,13 @@ class CompanySettings(Base):
     direccion = Column(String(150))
     telefono = Column(String(50))
     tipo_negocio = Column(String(50), default="Comercio") # Comercio, Restaurante, Servicios
+    
+    # Flags de Configuración de Módulos
+    ui_show_multicurrency = Column(Boolean, default=True)
+    ui_show_price_channels = Column(Boolean, default=True)
+    mod_inventory_fifo = Column(Boolean, default=True)
+    mod_budgets = Column(Boolean, default=True)
+    pos_strict_cash = Column(Boolean, default=True)
 
 class Remission(SyncableModel, Base):
     """Nota de Remisión (F7)"""

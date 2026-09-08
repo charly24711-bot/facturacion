@@ -15,7 +15,7 @@ class VentasTableModel(QAbstractTableModel):
     def __init__(self, parent=None, current_role="CAJERO"):
         super().__init__(parent)
         self.current_role = current_role
-        self.headers = ["Nro", "Codigo", "Descripcion", "Dp", "Cantidad", "Imp", "Iva", "Precio", "Total"]
+        self.headers = ["Nro", "Codigo", "Descripcion", "Dp", "Cantidad", "Imp", "Iva", "Precio", "Desc %", "Total"]
         self.items = [] # Lista de diccionarios
 
     def rowCount(self, parent=QModelIndex()):
@@ -48,10 +48,11 @@ class VentasTableModel(QAbstractTableModel):
             if col == 5: return f"{item['impuesto_porc']}%"
             if col == 6: return f"{item['iva_monto']:,.0f}"
             if col == 7: return f"{item['precio']:,.0f}"
-            if col == 8: return f"{item['total']:,.0f}"
+            if col == 8: return f"{item['descuento']}%"
+            if col == 9: return f"{item['total']:,.0f}"
             
         if role == Qt.ItemDataRole.TextAlignmentRole:
-            if col in [4, 6, 7, 8]:
+            if col in [4, 6, 7, 8, 9]:
                 return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             if col in [0, 3, 5]:
                 return Qt.AlignmentFlag.AlignCenter
@@ -86,6 +87,19 @@ class VentasTableModel(QAbstractTableModel):
                     return True
                 except (ValueError, InvalidOperation):
                     return False
+                    
+            # Edición de Descuento (columna 8)
+            if col == 8:
+                try:
+                    nuevo_desc = Decimal(str(value).replace('%', '').strip())
+                    if nuevo_desc < 0: nuevo_desc = Decimal('0')
+                    if nuevo_desc > 100: nuevo_desc = Decimal('100')
+                    self.items[row]['descuento'] = nuevo_desc
+                    self._recalcular_fila(row)
+                    self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+                    return True
+                except (ValueError, InvalidOperation):
+                    return False
         return False
 
     def flags(self, index):
@@ -93,6 +107,8 @@ class VentasTableModel(QAbstractTableModel):
         if index.column() == 4:
             return default_flags | Qt.ItemFlag.ItemIsEditable
         if index.column() == 7 and self.current_role in ["ADMIN", "GERENTE"]:
+            return default_flags | Qt.ItemFlag.ItemIsEditable
+        if index.column() == 8:
             return default_flags | Qt.ItemFlag.ItemIsEditable
         return default_flags
 
@@ -132,6 +148,7 @@ class VentasTableModel(QAbstractTableModel):
             'cantidad': Decimal(str(cantidad)),
             'precio': precio_final,
             'impuesto_porc': int(product.art_impu),
+            'descuento': Decimal('0'),
             'total': Decimal('0'),
             'iva_monto': Decimal('0')
         }
@@ -154,7 +171,12 @@ class VentasTableModel(QAbstractTableModel):
 
     def _recalcular_fila(self, row):
         item = self.items[row]
-        total = item['cantidad'] * item['precio']
+        subtotal = item['cantidad'] * item['precio']
+        if item.get('descuento', Decimal('0')) > 0:
+            monto_descuento = subtotal * (item['descuento'] / Decimal('100'))
+            total = subtotal - monto_descuento
+        else:
+            total = subtotal
         item['total'] = total
         
         # Skill: Tax Calculator

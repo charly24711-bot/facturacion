@@ -203,43 +203,37 @@ class TicketDialog(QDialog):
             items = db.query(models.InvoiceItem).filter_by(vit_numero=invoice.ven_numero).all()
             payments = db.query(models.Payment).filter_by(cob_vennro=invoice.ven_numero).all()
             
-            # Ancho estándar 80mm (~42 caracteres monoespaciados)
-            W = 42
-            SEP = "=" * W
-            MINI_SEP = "-" * W
+            # Ancho estándar 80mm (~40 caracteres monoespaciados)
+            W = 40
+            SEP = "-" * W
             
             fmt_pyg = lambda n: f"{n:,.0f}".replace(",", ".")
             fmt_sec = lambda n: f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             
             def fmt_fila_monto(label: str, amount_str: str, curr: str = "Gs.") -> str:
-                lbl_pad = f"{label:<24}"[:24]
+                lbl_pad = f"{label:<22}"[:22]
                 curr_pad = f"{curr:<4}"
-                num_pad = f"{amount_str:>14}"
-                return f"{lbl_pad}{curr_pad}{num_pad}"
+                num_pad = f"{amount_str:>12}"
+                return f"{lbl_pad} {curr_pad} {num_pad}"
             
             lines = []
             lines.append(nombre_empresa.center(W))
             lines.append(f"RUC: {ruc_empresa}".center(W))
             lines.append(dir_empresa.center(W))
             lines.append(f"Tel: {tel_empresa}".center(W))
-            lines.append("IVA INCLUIDO".center(W))
-            lines.append(SEP)
+            lines.append(f"TIMBRADO: 12345678".center(W))
+            lines.append(f"FECHA DE INICIO: 01/01/2026".center(W))
             
-            fecha_str = invoice.ven_fecha.strftime("%d/%m/%Y %H:%M:%S")
-            lines.append(f"FACTURA/TICKET : #{invoice.id:06d}")
-            lines.append(f"FECHA / HORA   : {fecha_str}")
-            lines.append(f"CONDICIÓN      : CONTADO")
-            lines.append(MINI_SEP)
-            
-            # Datos del cliente
-            lines.append(f"CLIENTE : {nombre_cli[:30]}")
-            lines.append(f"RUC/CI  : {ruc_cli}")
-            lines.append(f"CODIGO  : {cod_cli}")
+            fecha_str = invoice.ven_fecha.strftime("%d/%m/%Y %I:%M:%S %p").lower()
+            factura_num = f"001-001-{invoice.id:07d}"
+            lines.append(f"FACTURA No.: {factura_num}")
+            lines.append(f"FECHA: {fecha_str}")
             lines.append(SEP)
             
             # Encabezado ítems
-            lines.append(f"{'CANT':<5} {'DESCRIPCIÓN':<16} {'PRECIO':>8} {'TOTAL':>10}")
-            lines.append(MINI_SEP)
+            lines.append(f"{'ARTICULO':<12} {'DESCRIPCION':<27}")
+            lines.append(f"{'IVA':<5} {'CANTIDAD':<9} {'PRECIO':<7} {'DESC.':<6} {'TOTAL':>9}")
+            lines.append(SEP)
             
             tot_gravada_10 = Decimal("0")
             tot_iva_10 = Decimal("0")
@@ -249,6 +243,7 @@ class TicketDialog(QDialog):
             
             for it in items:
                 prod = it.product
+                codigo = prod.art_codigo if prod else "0000"
                 desc = prod.art_descri if prod else "ARTICULO"
                 tasa = int(prod.art_impu) if (prod and prod.art_impu is not None) else 10
                 
@@ -256,55 +251,87 @@ class TicketDialog(QDialog):
                 precio = it.vit_precio
                 subtotal = (canti * precio).quantize(Decimal("1"))
                 
+                # Descuento
+                descuento = Decimal("0") # Asumiendo 0 por ahora hasta implementar descuento en lineas
+                
                 # Desglose IVA según Ley 6380/19
                 if tasa == 10:
                     iva_it = (subtotal / Decimal("11")).quantize(Decimal("1"))
                     tot_iva_10 += iva_it
-                    tot_gravada_10 += (subtotal - iva_it)
+                    tot_gravada_10 += subtotal
                 elif tasa == 5:
                     iva_it = (subtotal / Decimal("21")).quantize(Decimal("1"))
                     tot_iva_5 += iva_it
-                    tot_gravada_5 += (subtotal - iva_it)
+                    tot_gravada_5 += subtotal
                 else:
                     tot_exenta += subtotal
                 
                 canti_str = f"{canti:.3f}".rstrip('0').rstrip('.') if '.' in str(canti) else str(canti)
-                lines.append(f"{canti_str:<5} {desc[:16]:<16} {fmt_pyg(precio):>8} {fmt_pyg(subtotal):>10}")
+                
+                # Line 1: Codigo - Descripcion
+                desc_line = f"{codigo} - {desc}"
+                # Split description if too long
+                if len(desc_line) > W:
+                    lines.append(desc_line[:W])
+                    lines.append(desc_line[W:W*2])
+                else:
+                    lines.append(desc_line)
+                    
+                # Line 2: IVA CANT x PRECIO DESC TOTAL
+                line_2 = f"{str(tasa)+'%':<5} {canti_str} x {fmt_pyg(precio):<7} {fmt_pyg(descuento):<6} {fmt_pyg(subtotal):>9}"
+                lines.append(line_2)
             
             lines.append(SEP)
             
             # TOTAL A PAGAR
             tot_pyg = invoice.ven_total or Decimal("0")
-            lines.append(fmt_fila_monto("TOTAL A PAGAR:", fmt_pyg(tot_pyg)))
-            lines.append(SEP)
+            lines.append(fmt_fila_monto("TOTAL:", fmt_pyg(tot_pyg)))
             
             # Formas de Pago
-            lines.append("FORMA DE PAGO:")
             total_pagado_pyg = Decimal("0")
             for p in payments:
                 if p.cob_mndori == "PYG":
-                    lines.append(fmt_fila_monto(f"  {p.cob_metodo} (PYG):", fmt_pyg(p.cob_monto_pyg)))
+                    lines.append(fmt_fila_monto(f"EFECTIVO PYG:", fmt_pyg(p.cob_monto_pyg)))
                 else:
-                    lines.append(fmt_fila_monto(f"  {p.cob_metodo} ({p.cob_mndori}):", fmt_sec(p.cob_monto), p.cob_mndori))
+                    lines.append(fmt_fila_monto(f"{p.cob_mndori}:", fmt_sec(p.cob_monto), p.cob_mndori))
                 total_pagado_pyg += p.cob_monto_pyg
             
+            lines.append(fmt_fila_monto("TOTAL PAGO:", fmt_pyg(total_pagado_pyg)))
             vuelto = max(Decimal("0"), total_pagado_pyg - tot_pyg)
-            if vuelto > Decimal("0"):
-                lines.append(fmt_fila_monto("VUELTO ENTREGADO:", fmt_pyg(vuelto)))
+            lines.append(fmt_fila_monto("VUELTO:", fmt_pyg(vuelto)))
+            lines.append(fmt_fila_monto("DESCUENTO:", "0"))
             
-            lines.append(MINI_SEP)
-            
-            # Liquidación del IVA (Ley 6380/19)
+            # Liquidación del IVA Dinámica
+            lines.append("DETALLE DE TOTALES")
+            if tot_gravada_10 > 0:
+                lines.append(f"Grav. 10%{' ' * (W - 10 - len(fmt_pyg(tot_gravada_10)))}{fmt_pyg(tot_gravada_10)}")
+            if tot_gravada_5 > 0:
+                lines.append(f"Grav. 5%{' ' * (W - 9 - len(fmt_pyg(tot_gravada_5)))}{fmt_pyg(tot_gravada_5)}")
+            if tot_exenta > 0:
+                lines.append(f"Exenta{' ' * (W - 7 - len(fmt_pyg(tot_exenta)))}{fmt_pyg(tot_exenta)}")
+                
+            lines.append("DETALLE DEL IMPUESTO")
+            if tot_iva_10 > 0:
+                lines.append(f"IVA 10%{' ' * (W - 8 - len(fmt_pyg(tot_iva_10)))}{fmt_pyg(tot_iva_10)}")
+            if tot_iva_5 > 0:
+                lines.append(f"IVA 5%{' ' * (W - 7 - len(fmt_pyg(tot_iva_5)))}{fmt_pyg(tot_iva_5)}")
+                
             total_iva_acum = tot_iva_10 + tot_iva_5
-            lines.append("LIQUIDACIÓN DEL I.V.A.".center(W))
-            lines.append(fmt_fila_monto("Gravadas 10%:", fmt_pyg(tot_gravada_10)))
-            lines.append(fmt_fila_monto("IVA 10%:", fmt_pyg(tot_iva_10)))
-            lines.append(fmt_fila_monto("Gravadas 5%:", fmt_pyg(tot_gravada_5)))
-            lines.append(fmt_fila_monto("IVA 5%:", fmt_pyg(tot_iva_5)))
-            lines.append(fmt_fila_monto("Exentas:", fmt_pyg(tot_exenta)))
-            lines.append(MINI_SEP)
-            lines.append(fmt_fila_monto("TOTAL I.V.A.:", fmt_pyg(total_iva_acum)))
+            
             lines.append(SEP)
+            
+            # Datos del cliente abajo
+            lines.append(f"Cliente: {nombre_cli[:30]}")
+            lines.append(f"C.I. / RUC: {ruc_cli}")
+            lines.append(f"CONDICION VENTA: CONTADO")
+            lines.append(f"CAJA: 01")
+            
+            usuario = "CAJERO PRINCIPAL"
+            if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'current_user'):
+                user_data = self.parent().current_user
+                if user_data:
+                    usuario = user_data.get('full_name', 'CAJERO PRINCIPAL')
+            lines.append(f"CAJERO/A: {usuario}")
             
             # Generación determinista del CDC oficial SIFEN (44 dígitos)
             ruc_clean = ruc_empresa.replace('-', '').strip()
@@ -333,11 +360,12 @@ class TicketDialog(QDialog):
             # Formatear CDC con guiones visuales
             c = self.cdc_code
             cdc_vis = f"{c[0:4]}-{c[4:8]}-{c[8:12]}-{c[12:16]}-{c[16:20]}-{c[20:24]}-{c[24:28]}-{c[28:32]}-{c[32:36]}-{c[36:40]}-{c[40:44]}"
-            lines.append(f"CDC: {self.cdc_code}")
+            
+            lines.append("Consulte validez de la Factura Electronica")
+            lines.append("con el numero CDC impreso abajo en:")
+            lines.append("https://ekuatia.set.gov.py/consultas")
+            lines.append(cdc_vis)
             lines.append("")
-            lines.append("¡GRACIAS POR SU COMPRA!".center(W))
-            lines.append("Exija siempre su comprobante legal".center(W))
-            lines.append(SEP)
             
             self.ticket_text = "\n".join(lines)
             self.txt_ticket.setPlainText(self.ticket_text)

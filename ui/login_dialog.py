@@ -17,7 +17,7 @@ class LoginDialog(QDialog):
     """
     def __init__(self, parent=None, auto_login=True, default_module='ADMIN'):
         super().__init__(parent)
-        self.setWindowTitle("Acceso al Sistema - Supermercado Triple Frontera")
+        self.setWindowTitle("Acceso al Sistema - TRIFRONTERA STOCK")
         self.setFixedSize(440, 480)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         
@@ -36,7 +36,7 @@ class LoginDialog(QDialog):
         header_layout = QVBoxLayout()
         header_layout.setSpacing(4)
         
-        lbl_brand = QLabel("SUPERMERCADO TRIPLE FRONTERA")
+        lbl_brand = QLabel("TRIFRONTERA STOCK")
         lbl_brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_brand.setFont(QFont("Arial", 13, QFont.Weight.Bold))
         lbl_brand.setStyleSheet("color: #1a237e; letter-spacing: 1px;")

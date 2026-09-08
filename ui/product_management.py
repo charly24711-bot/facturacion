@@ -4,25 +4,11 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QTabWidget, QWidget, QComboBox, QCheckBox)
 from PyQt6.QtCore import Qt
 from database import SessionLocal, format_stock_qty, format_iva_rate
-from decimal import Decimal
 import models
+from utils.formatting import aplicar_formato_moneda, parsear_monto
+from decimal import Decimal
 
 class ProductManagementDialog(QDialog):
-    def auto_format_thousands(self, text, line_edit):
-        if not text: return
-        clean_text = text.replace(",", "").replace(".", "")
-        if not clean_text.isdigit(): return
-        
-        formatted = f"{int(clean_text):,}"
-        if line_edit.text() != formatted:
-            cursor = line_edit.cursorPosition()
-            old_len = len(line_edit.text())
-            line_edit.blockSignals(True)
-            line_edit.setText(formatted)
-            line_edit.blockSignals(False)
-            new_len = len(formatted)
-            line_edit.setCursorPosition(cursor + (new_len - old_len))
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Gestión de Artículos (Supermercado)")
@@ -79,8 +65,9 @@ class ProductManagementDialog(QDialog):
         
         self.txt_location = QLineEdit()
         self.txt_costo = QLineEdit()
-        self.txt_costo.textChanged.connect(lambda t, le=self.txt_costo: self.auto_format_thousands(t, le))
+        self.txt_costo.textChanged.connect(lambda t, le=self.txt_costo: aplicar_formato_moneda(t, "PYG", le))
         self.txt_preven = QLineEdit()
+        self.txt_preven.textChanged.connect(lambda t, le=self.txt_preven: aplicar_formato_moneda(t, "PYG", le))
         
         self.combo_impu = QComboBox()
         self.combo_impu.addItem("10% — Tasa General", 10)
@@ -225,8 +212,8 @@ class ProductManagementDialog(QDialog):
             self.txt_codigo.setText(prod.art_codigo)
             self.txt_cbarra.setText(prod.art_cbarra or "")
             self.txt_descri.setText(prod.art_descri)
-            self.txt_costo.setText(f"{Decimal(str(prod.art_costo or 0)):,.0f}")
-            self.txt_preven.setText(f"{Decimal(str(prod.art_preven or 0)):,.0f}")
+            self.txt_costo.setText(f"{Decimal(str(prod.art_costo or 0)):,.0f}".replace(",", "."))
+            self.txt_preven.setText(f"{Decimal(str(prod.art_preven or 0)):,.0f}".replace(",", "."))
             impu_val = int(Decimal(str(prod.art_impu or 10)))
             idx_impu = self.combo_impu.findData(impu_val)
             if idx_impu >= 0:
@@ -352,8 +339,8 @@ class ProductManagementDialog(QDialog):
                 
             prod.art_cbarra = self.txt_cbarra.text()
             prod.art_descri = descri
-            prod.art_costo = Decimal(str(self.txt_costo.text()).replace(',', '') or 0)
-            prod.art_preven = Decimal(str(self.txt_preven.text()).replace(',', '') or 0)
+            prod.art_costo = Decimal(parsear_monto(self.txt_costo.text(), "PYG"))
+            prod.art_preven = Decimal(parsear_monto(self.txt_preven.text(), "PYG"))
             prod.art_impu = Decimal(str(self.combo_impu.currentData() or 10))
             prod.art_stkini = Decimal(str(self.txt_stkini.text()).replace(',', '') or 0)
             prod.art_stkmin = Decimal(str(self.txt_stkmin.text()).replace(',', '') or 10)

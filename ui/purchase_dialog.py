@@ -9,6 +9,7 @@ from PyQt6.QtGui import QFont
 
 from database import SessionLocal
 import models
+from utils.formatting import aplicar_formato_moneda, parsear_monto
 
 class PurchaseDialog(QDialog):
     def __init__(self, parent=None):
@@ -23,21 +24,6 @@ class PurchaseDialog(QDialog):
         self.load_suppliers()
         self.cargar_lista_productos()
         
-
-    def auto_format_thousands(self, text, line_edit):
-        if not text: return
-        clean_text = text.replace(",", "").replace(".", "")
-        if not clean_text.isdigit(): return
-        
-        formatted = f"{int(clean_text):,}"
-        if line_edit.text() != formatted:
-            cursor = line_edit.cursorPosition()
-            old_len = len(line_edit.text())
-            line_edit.blockSignals(True)
-            line_edit.setText(formatted)
-            line_edit.blockSignals(False)
-            new_len = len(formatted)
-            line_edit.setCursorPosition(cursor + (new_len - old_len))
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -96,7 +82,7 @@ class PurchaseDialog(QDialog):
         
         self.txt_cost = QLineEdit()
         self.txt_cost.setPlaceholderText("Costo Unit.")
-        self.txt_cost.textChanged.connect(lambda t, le=self.txt_cost: self.auto_format_thousands(t, le))
+        self.txt_cost.textChanged.connect(lambda t: aplicar_formato_moneda(t, "PYG", self.txt_cost))
         self.txt_cost.setFixedWidth(80)
         self.txt_cost.returnPressed.connect(lambda: self.txt_lote.setFocus())
         
@@ -245,7 +231,7 @@ class PurchaseDialog(QDialog):
             
         try:
             qty_input = Decimal(self.txt_qty.text().replace(',', '.'))
-            cost_input = Decimal(self.txt_cost.text().replace(',', '.'))
+            cost_input = Decimal(parsear_monto(self.txt_cost.text(), "PYG"))
         except:
             QMessageBox.warning(self, "Error", "Cantidad o Costo inválidos.")
             return

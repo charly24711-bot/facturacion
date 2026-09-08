@@ -136,14 +136,59 @@ class CajaMovimientoDialog(QDialog):
 
         # Focus inicial en monto
         self.txt_monto.setFocus()
+        self.txt_monto.textChanged.connect(self.aplicar_regla_coma)
         self.txt_monto.returnPressed.connect(self.guardar_movimiento)
+        
+        self.combo_mnd.currentTextChanged.connect(lambda: self.aplicar_regla_coma(self.txt_monto.text()))
+
+    def aplicar_regla_coma(self, text):
+        if not text:
+            return
+            
+        # Si es Guaraníes, formatear con puntos de miles (sin decimales)
+        if "PYG" in self.combo_mnd.currentText():
+            raw = "".join(c for c in text if c.isdigit())
+            if raw:
+                formatted = f"{int(raw):,}".replace(",", ".")
+                self.txt_monto.blockSignals(True)
+                self.txt_monto.setText(formatted)
+                self.txt_monto.blockSignals(False)
+        else:
+            # Para otras monedas, permitir un separador decimal (coma o punto)
+            # Solo limpiamos caracteres extraños
+            clean = "".join(c for c in text if c.isdigit() or c in ".,")
+            if clean != text:
+                self.txt_monto.blockSignals(True)
+                self.txt_monto.setText(clean)
+                self.txt_monto.blockSignals(False)
 
     def guardar_movimiento(self):
-        monto_str = self.txt_monto.text().strip().replace(',', '')
-        if not monto_str:
+        txt = self.txt_monto.text().strip()
+        if not txt:
             QMessageBox.warning(self, "Dato Requerido", "Ingrese el monto del movimiento.")
             self.txt_monto.setFocus()
             return
+            
+        # Parseo robusto del monto (Regla de la coma)
+        if "PYG" in self.combo_mnd.currentText():
+            monto_str = txt.replace(".", "").replace(",", "")
+        else:
+            # Si tiene punto y coma (ej. 1.000,50) -> el último es el decimal
+            if "." in txt and "," in txt:
+                if txt.rfind(",") > txt.rfind("."):
+                    monto_str = txt.replace(".", "").replace(",", ".")
+                else:
+                    monto_str = txt.replace(",", "")
+            # Si solo tiene coma, asumimos que es decimal (ej. 10,50)
+            elif "," in txt:
+                # A menos que sean exactamente 3 ceros después de la única coma (ej 1,000)
+                partes = txt.split(",")
+                if len(partes) == 2 and len(partes[1]) == 3:
+                    monto_str = txt.replace(",", "") # Asumimos miles
+                else:
+                    monto_str = txt.replace(",", ".")
+            else:
+                monto_str = txt
 
         try:
             monto = Decimal(monto_str)

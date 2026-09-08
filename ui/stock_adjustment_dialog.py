@@ -14,10 +14,12 @@ from PyQt6.QtWidgets import (
     QCompleter, QWidget, QSplitter
 )
 from PyQt6.QtCore import Qt, QStringListModel, QDate
-from PyQt6.QtGui import QFont, QColor
-
+from PyQt6.QtGui import QFont, QIcon, QColor
+from decimal import Decimal
+import datetime
 from database import SessionLocal
 import models
+from utils.formatting import aplicar_formato_moneda, parsear_monto
 
 
 TIPOS_AJUSTE = {
@@ -124,6 +126,7 @@ class StockAdjustmentDialog(QDialog):
         # Costo unitario (referencia)
         form.addWidget(QLabel("Costo Unitario (₲):"), 6, 0)
         self.txt_costo = QLineEdit("0")
+        self.txt_costo.textChanged.connect(lambda t: aplicar_formato_moneda(t, "PYG", self.txt_costo))
         self.txt_costo.textChanged.connect(self._actualizar_perdida)
         form.addWidget(self.txt_costo, 6, 1, 1, 2)
 
@@ -269,7 +272,7 @@ class StockAdjustmentDialog(QDialog):
         try:
             qty_str = self.txt_cantidad.text().replace(',', '.').strip()
             qty = Decimal(qty_str) if qty_str else Decimal('0')
-            costo_str = self.txt_costo.text().replace(',', '').replace('.', '').strip()
+            costo_str = parsear_monto(self.txt_costo.text(), "PYG")
             costo = Decimal(costo_str) if costo_str else Decimal('0')
             perdida = (qty * costo).quantize(Decimal('1'))
             self.lbl_perdida.setText(f"₲ {perdida:,.0f}".replace(',', '.'))
@@ -312,7 +315,7 @@ class StockAdjustmentDialog(QDialog):
             return
 
         try:
-            costo_str = self.txt_costo.text().replace(',', '').replace('.', '').strip() or '0'
+            costo_str = parsear_monto(self.txt_costo.text(), "PYG") or "0"
             costo = Decimal(costo_str)
         except InvalidOperation:
             costo = Decimal('0')

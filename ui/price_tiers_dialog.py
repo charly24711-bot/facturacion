@@ -9,6 +9,7 @@ from PyQt6.QtGui import QColor
 
 from database import SessionLocal
 import models
+from utils.formatting import aplicar_formato_moneda, parsear_monto
 
 
 class PriceTiersDialog(QDialog):
@@ -20,21 +21,7 @@ class PriceTiersDialog(QDialog):
         self.setup_ui()
 
 
-    def auto_format_thousands(self, text, line_edit):
-        if not text: return
-        clean_text = text.replace(",", "").replace(".", "")
-        if not clean_text.isdigit(): return
-        
-        formatted = f"{int(clean_text):,}"
-        if line_edit.text() != formatted:
-            cursor = line_edit.cursorPosition()
-            old_len = len(line_edit.text())
-            line_edit.blockSignals(True)
-            line_edit.setText(formatted)
-            line_edit.blockSignals(False)
-            new_len = len(formatted)
-            line_edit.setCursorPosition(cursor + (new_len - old_len))
-
+    # auto_format_thousands removido en favor de utils.formatting
     def setup_ui(self):
         main = QVBoxLayout(self)
 
@@ -82,7 +69,7 @@ class PriceTiersDialog(QDialog):
 
         self.txt_precio = QLineEdit()
         self.txt_precio.setPlaceholderText("Precio especial (₲)")
-        self.txt_precio.textChanged.connect(lambda t, le=self.txt_precio: self.auto_format_thousands(t, le))
+        self.txt_precio.textChanged.connect(lambda t: aplicar_formato_moneda(t, "PYG", self.txt_precio))
 
         self.txt_descri = QLineEdit()
         self.txt_descri.setPlaceholderText("Descripción  ej: Precio Mayorista")
@@ -185,7 +172,7 @@ class PriceTiersDialog(QDialog):
             QMessageBox.warning(self, "Error", "Seleccione un producto primero.")
             return
         try:
-            precio = Decimal(self.txt_precio.text().replace(",", "."))
+            precio = Decimal(parsear_monto(self.txt_precio.text(), "PYG"))
         except Exception:
             QMessageBox.warning(self, "Error", "Precio inválido.")
             return

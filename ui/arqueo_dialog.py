@@ -6,6 +6,7 @@ from database import SessionLocal
 import models
 from decimal import Decimal
 import datetime
+from utils.formatting import aplicar_formato_moneda, parsear_monto
 
 class ArqueoDialog(QDialog):
     def __init__(self, session_id, parent=None):
@@ -40,6 +41,7 @@ class ArqueoDialog(QDialog):
         monedas = ["PYG", "USD", "BRL", "ARS"]
         for m in monedas:
             txt = QLineEdit("0")
+            txt.textChanged.connect(lambda t, le=txt, mon=m: aplicar_formato_moneda(t, mon, le))
             self.inputs_efectivo[m] = txt
             layout_efec.addRow(f"Efectivo {m}:", txt)
         main_layout.addWidget(grp_efectivo)
@@ -52,6 +54,7 @@ class ArqueoDialog(QDialog):
         digis = [("Tarjeta Crédito", "PYG"), ("Tarjeta Débito", "PYG"), ("PIX", "BRL"), ("Transferencia Bancaria", "PYG")]
         for met, mon in digis:
             txt = QLineEdit("0")
+            txt.textChanged.connect(lambda t, le=txt, m=mon: aplicar_formato_moneda(t, m, le))
             self.inputs_digitales[(met, mon)] = txt
             layout_digi.addRow(f"{met} ({mon}):", txt)
         main_layout.addWidget(grp_digital)
@@ -82,12 +85,12 @@ class ArqueoDialog(QDialog):
             # 1. Recolectar lo declarado
             declaraciones = {}
             for m, txt in self.inputs_efectivo.items():
-                val = txt.text().replace(',', '').strip()
+                val = parsear_monto(txt.text(), m)
                 val = val if val else "0"
                 declaraciones[('Efectivo', m)] = Decimal(val)
                 
             for (met, m), txt in self.inputs_digitales.items():
-                val = txt.text().replace(',', '').strip()
+                val = parsear_monto(txt.text(), m)
                 val = val if val else "0"
                 declaraciones[(met, m)] = Decimal(val)
                 
