@@ -1,7 +1,13 @@
+import sys
+import os
+
+# Asegurar que la raíz del proyecto esté en sys.path para ejecución directa
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QLineEdit, QPushButton, QFormLayout, 
                              QHeaderView, QMessageBox, QGroupBox, QSplitter, 
-                             QTabWidget, QWidget, QComboBox, QCheckBox)
+                             QTabWidget, QWidget, QComboBox, QCheckBox, QApplication)
 from PyQt6.QtCore import Qt
 from database import SessionLocal, format_stock_qty, format_iva_rate
 import models
@@ -383,3 +389,9 @@ class ProductManagementDialog(QDialog):
                 from PyQt6.QtGui import QPixmap
                 pixmap = QPixmap(self.current_image_path)
                 self.lbl_product_photo.setPixmap(pixmap.scaled(self.lbl_product_photo.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    dialog = ProductManagementDialog()
+    dialog.show()
+    sys.exit(app.exec())
