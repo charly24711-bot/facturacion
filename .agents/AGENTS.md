@@ -36,3 +36,15 @@ En cada interacción de código o arquitectura, estructurar la salida en:
 - **Ruta**: `.agents/skills/validator/validator.py`
 - **Uso obligatorio**: Todo flujo debe pasar por `POSGuardrail.validate_sale_item()` antes de registrar ventas o alterar stock en `stock_control.db`.
 - **Regla Estricta**: No usar `float`. Toda operación aritmética con stock o precios se debe realizar exclusivamente con `decimal.Decimal`.
+
+## 6. Arquitectura del Flujo Multiagente
+Toda evolución del proyecto sigue la topología jerárquica con bucle de verificación:
+`Coordinador -> Planificador -> Implementador -> Revisor`
+
+- **(A) Coordinador**: Orquesta las fases, administra el estado global (`MEMORY.md`, `specs/`) y consolida la entrega al usuario.
+- **(S) Planificador**: Analiza la petición del usuario y diseña la solución bajo la metodología SDD (`spec.md`, `plan.md`, `tasks.md`).
+- **(S) Implementador**: Escribe el código en Python/PyQt6/SQLAlchemy y desarrolla las pruebas asociadas (`tests/`).
+- **(S) Revisor / Verificador**: Audita el código frente al plan, ejecuta `pytest` y evalúa el cumplimiento de directivas:
+  * **¿Pasa? SÍ**: El Coordinador actualiza `tasks.md`, registra en `MEMORY.md` y entrega la respuesta.
+  * **¿Pasa? NO**: Retorna al Coordinador con el reporte de hallazgos para que el Implementador aplique los ajustes.
+

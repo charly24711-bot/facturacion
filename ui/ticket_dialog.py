@@ -4,6 +4,11 @@ import os
 import io
 import base64
 import datetime
+
+# Asegurar que la raíz del proyecto y skills estén en sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.agents/skills')))
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, 
     QLabel, QMessageBox, QApplication, QGroupBox
@@ -15,32 +20,27 @@ from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 import qrcode
 from database import SessionLocal
 import models
-
-# Importar Skill de Impuestos y Validador de RUC
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../.agents/skills/tax_calculator/scripts')))
 import tax_calculator
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../.agents/skills')))
-try:
-    from ruc_validator.ruc_validator import calcular_dv_ruc
-except ImportError:
-    from ruc_validator import calcular_dv_ruc
+from ruc_validator.ruc_validator import calcular_dv_ruc
+from utils.escpos_driver import ESCPOSCommandBuilder, ESCPOSPrinterDriver, ESCPOSPrintWorker
 
 class TicketDialog(QDialog):
     """
     Diálogo de visualización e impresión de Ticket / Factura Legal (KuDE SIFEN)
-    con desglose completo de IVA (DNIT Paraguay), CDC oficial de 44 dígitos
-    y Código QR oficial para consulta en e-Kuatia.
+    con soporte para impresión directa ESC/POS y diálogo estándar del sistema operativo.
     """
     def __init__(self, invoice_id: int, parent=None):
         super().__init__(parent)
         self.invoice_id = invoice_id
         self.setWindowTitle(f"Factura Legal KuDE #{invoice_id:06d} - DNIT Paraguay")
-        self.resize(520, 740)
+        self.resize(540, 760)
         
         self.ticket_text = ""
         self.cdc_code = ""
         self.qr_base64 = ""
         self.qr_url = ""
+        self.escpos_bytes = b""
+        self.print_worker = None
         
         self.setup_ui()
         self.cargar_y_generar_ticket()
@@ -124,24 +124,49 @@ class TicketDialog(QDialog):
         qr_layout.addLayout(qr_text_layout, stretch=1)
         layout.addWidget(self.qr_box)
         
+        # Etiqueta de estado de impresión
+        self.lbl_print_status = QLabel("")
+        self.lbl_print_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_print_status.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+        layout.addWidget(self.lbl_print_status)
+        
         # Barra de botones
         btn_layout = QHBoxLayout()
         
-        self.btn_imprimir = QPushButton("🖨️ Imprimir Ticket KuDE")
-        self.btn_imprimir.setStyleSheet("""
+        self.btn_imprimir_escpos = QPushButton("⚡ Impresión Rápida ESC/POS")
+        self.btn_imprimir_escpos.setStyleSheet("""
             QPushButton {
                 background-color: #2e7d32;
                 color: white;
                 font-weight: bold;
-                padding: 10px 18px;
+                padding: 10px 16px;
                 font-size: 13px;
                 border-radius: 4px;
             }
             QPushButton:hover {
                 background-color: #1b5e20;
             }
+            QPushButton:disabled {
+                background-color: #a5d6a7;
+            }
         """)
-        self.btn_imprimir.clicked.connect(self.imprimir_ticket)
+        self.btn_imprimir_escpos.clicked.connect(self.imprimir_directo_escpos)
+        
+        self.btn_imprimir_so = QPushButton("🖨️ Diálogo SO")
+        self.btn_imprimir_so.setStyleSheet("""
+            QPushButton {
+                background-color: #455a64;
+                color: white;
+                font-weight: bold;
+                padding: 10px 14px;
+                font-size: 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #263238;
+            }
+        """)
+        self.btn_imprimir_so.clicked.connect(self.imprimir_ticket_so)
         
         self.btn_copiar = QPushButton("📋 Copiar Texto")
         self.btn_copiar.setStyleSheet("""
@@ -149,8 +174,8 @@ class TicketDialog(QDialog):
                 background-color: #1976d2;
                 color: white;
                 font-weight: bold;
-                padding: 10px 16px;
-                font-size: 13px;
+                padding: 10px 14px;
+                font-size: 12px;
                 border-radius: 4px;
             }
             QPushButton:hover {
@@ -166,7 +191,7 @@ class TicketDialog(QDialog):
                 color: white;
                 font-weight: bold;
                 padding: 10px 16px;
-                font-size: 13px;
+                font-size: 12px;
                 border-radius: 4px;
             }
             QPushButton:hover {
@@ -176,7 +201,8 @@ class TicketDialog(QDialog):
         self.btn_cerrar.clicked.connect(self.accept)
         self.btn_cerrar.setDefault(True)
         
-        btn_layout.addWidget(self.btn_imprimir)
+        btn_layout.addWidget(self.btn_imprimir_escpos)
+        btn_layout.addWidget(self.btn_imprimir_so)
         btn_layout.addWidget(self.btn_copiar)
         btn_layout.addWidget(self.btn_cerrar)
         layout.addLayout(btn_layout)
@@ -194,6 +220,7 @@ class TicketDialog(QDialog):
             ruc_empresa = company.ruc if (company and company.ruc) else "80012345-6"
             dir_empresa = company.direccion if (company and company.direccion) else "Avda. San Blas e/ Curupayty - CDE"
             tel_empresa = company.telefono if (company and company.telefono) else "(061) 500-123"
+            timbrado_empresa = company.timbrado if (company and company.timbrado) else "12345678"
             
             client = invoice.client
             cod_cli = invoice.ven_codcli or "000001"
@@ -221,10 +248,10 @@ class TicketDialog(QDialog):
             lines.append(f"RUC: {ruc_empresa}".center(W))
             lines.append(dir_empresa.center(W))
             lines.append(f"Tel: {tel_empresa}".center(W))
-            lines.append(f"TIMBRADO: 12345678".center(W))
+            lines.append(f"TIMBRADO: {timbrado_empresa}".center(W))
             lines.append(f"FECHA DE INICIO: 01/01/2026".center(W))
             
-            fecha_str = invoice.ven_fecha.strftime("%d/%m/%Y %I:%M:%S %p").lower()
+            fecha_str = invoice.ven_fecha.strftime("%d/%m/%Y %I:%M:%S %p").lower() if invoice.ven_fecha else datetime.datetime.now().strftime("%d/%m/%Y %I:%M:%S %p").lower()
             factura_num = f"001-001-{invoice.id:07d}"
             lines.append(f"FACTURA No.: {factura_num}")
             lines.append(f"FECHA: {fecha_str}")
@@ -251,8 +278,7 @@ class TicketDialog(QDialog):
                 precio = it.vit_precio
                 subtotal = (canti * precio).quantize(Decimal("1"))
                 
-                # Descuento
-                descuento = Decimal("0") # Asumiendo 0 por ahora hasta implementar descuento en lineas
+                descuento = Decimal("0")
                 
                 # Desglose IVA según Ley 6380/19
                 if tasa == 10:
@@ -270,7 +296,6 @@ class TicketDialog(QDialog):
                 
                 # Line 1: Codigo - Descripcion
                 desc_line = f"{codigo} - {desc}"
-                # Split description if too long
                 if len(desc_line) > W:
                     lines.append(desc_line[:W])
                     lines.append(desc_line[W:W*2])
@@ -290,10 +315,21 @@ class TicketDialog(QDialog):
             # Formas de Pago
             total_pagado_pyg = Decimal("0")
             for p in payments:
+                metodo_desc = p.cob_metodo or "EFECTIVO"
+                if getattr(p, 'card_brand', None):
+                    metodo_desc = f"TARJETA {p.card_brand}"
+                elif p.cob_mndori != "PYG":
+                    metodo_desc = f"DIVISA {p.cob_mndori}"
+                
                 if p.cob_mndori == "PYG":
-                    lines.append(fmt_fila_monto(f"EFECTIVO PYG:", fmt_pyg(p.cob_monto_pyg)))
+                    lines.append(fmt_fila_monto(f"{metodo_desc}:", fmt_pyg(p.cob_monto_pyg)))
                 else:
-                    lines.append(fmt_fila_monto(f"{p.cob_mndori}:", fmt_sec(p.cob_monto), p.cob_mndori))
+                    lines.append(fmt_fila_monto(f"{metodo_desc}:", fmt_sec(p.cob_monto), p.cob_mndori))
+                
+                if getattr(p, 'auth_code', None) or getattr(p, 'voucher_nro', None):
+                    auth_txt = f"  Auth: {p.auth_code or ''} | Vouch: {p.voucher_nro or ''}"
+                    lines.append(auth_txt[:W])
+                
                 total_pagado_pyg += p.cob_monto_pyg
             
             lines.append(fmt_fila_monto("TOTAL PAGO:", fmt_pyg(total_pagado_pyg)))
@@ -320,7 +356,7 @@ class TicketDialog(QDialog):
             
             lines.append(SEP)
             
-            # Datos del cliente abajo
+            # Datos del cliente
             lines.append(f"Cliente: {nombre_cli[:30]}")
             lines.append(f"C.I. / RUC: {ruc_cli}")
             lines.append(f"CONDICION VENTA: CONTADO")
@@ -333,7 +369,7 @@ class TicketDialog(QDialog):
                     usuario = user_data.get('full_name', 'CAJERO PRINCIPAL')
             lines.append(f"CAJERO/A: {usuario}")
             
-            # Generación determinista del CDC oficial SIFEN (44 dígitos)
+            # CDC Oficial SIFEN (44 dígitos)
             ruc_clean = ruc_empresa.replace('-', '').strip()
             if '-' in ruc_empresa:
                 partes = ruc_empresa.split('-')
@@ -343,28 +379,28 @@ class TicketDialog(QDialog):
                 ruc_base = ruc_clean[:-1].zfill(8) if len(ruc_clean) > 1 else "80012345"
                 dv_ruc = ruc_clean[-1] if len(ruc_clean) > 0 else "6"
                 
-            tipo_doc = "01" # Factura Electrónica
+            tipo_doc = "01"
             estab = "001"
             pto_exp = "001"
             nro_sec = f"{(invoice.ven_numero or invoice.id):07d}"
-            tipo_contrib = "1" # Persona Jurídica
+            tipo_contrib = "1"
             fec_emision = invoice.ven_fecha or datetime.datetime.utcnow()
             fecha_cad = fec_emision.strftime("%Y%m%d")
-            tipo_emision = "1" # Normal
-            cod_seguridad = "100000001" # 9 dígitos
+            tipo_emision = "1"
+            cod_seguridad = "100000001"
             
             cadena_43 = f"{tipo_doc}{ruc_base}{dv_ruc}{estab}{pto_exp}{nro_sec}{tipo_contrib}{fecha_cad}{tipo_emision}{cod_seguridad}"
             dv_cdc = calcular_dv_ruc(cadena_43)
             self.cdc_code = f"{cadena_43}{dv_cdc}"
             
-            # Formatear CDC con guiones visuales
             c = self.cdc_code
             cdc_vis = f"{c[0:4]}-{c[4:8]}-{c[8:12]}-{c[12:16]}-{c[16:20]}-{c[20:24]}-{c[24:28]}-{c[28:32]}-{c[32:36]}-{c[36:40]}-{c[40:44]}"
             
             lines.append("Consulte validez de la Factura Electronica")
             lines.append("con el numero CDC impreso abajo en:")
             lines.append("https://ekuatia.set.gov.py/consultas")
-            lines.append(cdc_vis)
+            lines.append(f"CDC: {c[:22]}")
+            lines.append(f"     {c[22:]}")
             lines.append("")
             
             self.ticket_text = "\n".join(lines)
@@ -393,12 +429,202 @@ class TicketDialog(QDialog):
             pixmap.loadFromData(qr_bytes)
             self.lbl_qr_img.setPixmap(pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
             
+            # Generar flujo binario ESC/POS nativo
+            self.generar_bytes_escpos(
+                company_name=nombre_empresa,
+                ruc_empresa=ruc_empresa,
+                dir_empresa=dir_empresa,
+                tel_empresa=tel_empresa,
+                timbrado=timbrado_empresa,
+                factura_num=factura_num,
+                fecha_str=fecha_str,
+                items=items,
+                payments=payments,
+                tot_pyg=tot_pyg,
+                total_pagado_pyg=total_pagado_pyg,
+                vuelto=vuelto,
+                tot_gravada_10=tot_gravada_10,
+                tot_gravada_5=tot_gravada_5,
+                tot_exenta=tot_exenta,
+                tot_iva_10=tot_iva_10,
+                tot_iva_5=tot_iva_5,
+                nombre_cli=nombre_cli,
+                ruc_cli=ruc_cli,
+                usuario=usuario
+            )
+            
         except Exception as e:
             self.txt_ticket.setPlainText(f"Error generando ticket: {str(e)}")
         finally:
             db.close()
+
+    def generar_bytes_escpos(self, **data):
+        """Construye los comandos binarios ESC/POS para la impresora térmica."""
+        W = 40
+        builder = ESCPOSCommandBuilder(encoding='cp850', width=W)
+        
+        # 1. Cabecera Centrada y Negrita
+        builder.align_center().bold(True)
+        builder.text_line(data.get('company_name', 'SUPERMERCADO CENTRAL'))
+        builder.bold(False)
+        builder.text_line(f"RUC: {data.get('ruc_empresa', '80012345-6')}")
+        builder.text_line(data.get('dir_empresa', ''))
+        builder.text_line(f"Tel: {data.get('tel_empresa', '')}")
+        builder.text_line(f"TIMBRADO: {data.get('timbrado', '12345678')}")
+        builder.text_line("FECHA DE INICIO: 01/01/2026")
+        
+        # 2. Factura y Fecha
+        builder.align_left()
+        builder.text_line(f"FACTURA No.: {data.get('factura_num', '')}")
+        builder.text_line(f"FECHA: {data.get('fecha_str', '')}")
+        builder.separator("-")
+        
+        # 3. Encabezado de Items
+        builder.text_line(f"{'ARTICULO':<12} {'DESCRIPCION':<27}")
+        builder.text_line(f"{'IVA':<5} {'CANTIDAD':<9} {'PRECIO':<7} {'DESC.':<6} {'TOTAL':>9}")
+        builder.separator("-")
+        
+        fmt_pyg = lambda n: f"{n:,.0f}".replace(",", ".")
+        fmt_sec = lambda n: f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        
+        for it in data.get('items', []):
+            prod = it.product
+            codigo = prod.art_codigo if prod else "0000"
+            desc = prod.art_descri if prod else "ARTICULO"
+            tasa = int(prod.art_impu) if (prod and prod.art_impu is not None) else 10
+            canti = it.vit_canti
+            precio = it.vit_precio
+            subtotal = (canti * precio).quantize(Decimal("1"))
+            canti_str = f"{canti:.3f}".rstrip('0').rstrip('.') if '.' in str(canti) else str(canti)
             
-    def imprimir_ticket(self):
+            desc_line = f"{codigo} - {desc}"
+            if len(desc_line) > W:
+                builder.text_line(desc_line[:W])
+                builder.text_line(desc_line[W:W*2])
+            else:
+                builder.text_line(desc_line)
+                
+            line_2 = f"{str(tasa)+'%':<5} {canti_str} x {fmt_pyg(precio):<7} {fmt_pyg(Decimal('0')):<6} {fmt_pyg(subtotal):>9}"
+            builder.text_line(line_2)
+            
+        builder.separator("-")
+        
+        # 4. Total a Pagar en Doble Altura
+        builder.bold(True).font_size(double_width=False, double_height=True)
+        tot_pyg = data.get('tot_pyg', Decimal('0'))
+        builder.two_columns("TOTAL Gs.:", fmt_pyg(tot_pyg))
+        builder.font_size(double_width=False, double_height=False).bold(False)
+        
+        # 5. Formas de pago
+        for p in data.get('payments', []):
+            metodo_desc = p.cob_metodo or "EFECTIVO"
+            if getattr(p, 'card_brand', None):
+                metodo_desc = f"TARJETA {p.card_brand}"
+            elif p.cob_mndori != "PYG":
+                metodo_desc = f"DIVISA {p.cob_mndori}"
+            
+            if p.cob_mndori == "PYG":
+                builder.two_columns(f"{metodo_desc}:", f"Gs. {fmt_pyg(p.cob_monto_pyg)}")
+            else:
+                builder.two_columns(f"{metodo_desc}:", f"{p.cob_mndori} {fmt_sec(p.cob_monto)}")
+                
+            if getattr(p, 'auth_code', None) or getattr(p, 'voucher_nro', None):
+                builder.text_line(f"  Auth: {p.auth_code or ''} | Vouch: {p.voucher_nro or ''}"[:W])
+                
+        builder.two_columns("TOTAL PAGO:", f"Gs. {fmt_pyg(data.get('total_pagado_pyg', Decimal('0')))}")
+        builder.two_columns("VUELTO:", f"Gs. {fmt_pyg(data.get('vuelto', Decimal('0')))}")
+        
+        # 6. Desglose de IVA
+        builder.text_line("DETALLE DE TOTALES")
+        tot_g10 = data.get('tot_gravada_10', Decimal('0'))
+        tot_g5 = data.get('tot_gravada_5', Decimal('0'))
+        tot_ex = data.get('tot_exenta', Decimal('0'))
+        if tot_g10 > 0:
+            builder.two_columns("Grav. 10%:", fmt_pyg(tot_g10))
+        if tot_g5 > 0:
+            builder.two_columns("Grav. 5%:", fmt_pyg(tot_g5))
+        if tot_ex > 0:
+            builder.two_columns("Exenta:", fmt_pyg(tot_ex))
+            
+        builder.text_line("DETALLE DEL IMPUESTO")
+        tot_i10 = data.get('tot_iva_10', Decimal('0'))
+        tot_i5 = data.get('tot_iva_5', Decimal('0'))
+        if tot_i10 > 0:
+            builder.two_columns("IVA 10%:", fmt_pyg(tot_i10))
+        if tot_i5 > 0:
+            builder.two_columns("IVA 5%:", fmt_pyg(tot_i5))
+            
+        builder.separator("-")
+        
+        # 7. Datos de Cliente y Cajero
+        builder.text_line(f"Cliente: {data.get('nombre_cli', '')[:30]}")
+        builder.text_line(f"C.I. / RUC: {data.get('ruc_cli', '')}")
+        builder.text_line("CONDICION VENTA: CONTADO")
+        builder.text_line(f"CAJERO/A: {data.get('usuario', 'CAJERO')}")
+        
+        # 8. SIFEN QR y CDC
+        builder.align_center()
+        builder.text_line("Consulte validez de la Factura Electronica")
+        builder.text_line("en https://ekuatia.set.gov.py/consultas")
+        if self.qr_url:
+            builder.qr_code(self.qr_url, size=4)
+            
+        c = self.cdc_code
+        if c:
+            builder.text_line(f"CDC: {c[:22]}")
+            builder.text_line(f"     {c[22:]}")
+            
+        # 9. Avance y Corte de Papel
+        builder.feed(4)
+        builder.cut_paper(partial=True)
+        
+        self.escpos_bytes = builder.get_bytes()
+
+    def imprimir_directo_escpos(self):
+        """Envía el ticket binario directamente a la impresora configurada mediante un hilo de fondo."""
+        db = SessionLocal()
+        try:
+            company = db.query(models.CompanySettings).first()
+            conn_type = company.printer_type if (company and company.printer_type) else ESCPOSPrinterDriver.CONN_SIMULATOR
+            ip = company.printer_ip if (company and company.printer_ip) else "192.168.1.200"
+            port = company.printer_port if (company and company.printer_port) else 9100
+            pname = company.printer_name if (company and company.printer_name) else ""
+            serial_p = company.printer_serial_port if (company and company.printer_serial_port) else "COM1"
+        except Exception:
+            conn_type = ESCPOSPrinterDriver.CONN_SIMULATOR
+            ip, port, pname, serial_p = "192.168.1.200", 9100, "", "COM1"
+        finally:
+            db.close()
+
+        self.btn_imprimir_escpos.setEnabled(False)
+        self.lbl_print_status.setText("⏳ Transmitiendo ticket a impresora térmica...")
+        self.lbl_print_status.setStyleSheet("color: #0277bd;")
+
+        driver = ESCPOSPrinterDriver(
+            connection_type=conn_type,
+            ip=ip,
+            port=port,
+            printer_name=pname,
+            serial_port=serial_p,
+            timeout=3.0
+        )
+        
+        self.print_worker = ESCPOSPrintWorker(driver=driver, raw_data=self.escpos_bytes)
+        self.print_worker.finished_signal.connect(self.on_escpos_finished)
+        self.print_worker.start()
+
+    def on_escpos_finished(self, success: bool, msg: str):
+        self.btn_imprimir_escpos.setEnabled(True)
+        if success:
+            self.lbl_print_status.setText("✓ Ticket impreso con éxito.")
+            self.lbl_print_status.setStyleSheet("color: #2e7d32; font-weight: bold;")
+        else:
+            self.lbl_print_status.setText(f"✕ {msg}")
+            self.lbl_print_status.setStyleSheet("color: #c62828; font-weight: bold;")
+            QMessageBox.warning(self, "Alerta de Impresora Térmica", f"No se pudo completar la impresión física:\n\n{msg}\n\nPuede utilizar 'Diálogo SO' o reintentar.")
+
+    def imprimir_ticket_so(self):
+        """Impresión mediante el diálogo nativo de Windows (GDI/PDF/Spooler estándar)."""
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         dialog = QPrintDialog(printer, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -414,9 +640,22 @@ class TicketDialog(QDialog):
             """
             doc.setHtml(html_content)
             doc.print(printer)
-            QMessageBox.information(self, "Impresión", "Ticket KuDE enviado a la impresora.")
+            self.lbl_print_status.setText("✓ Enviado a la cola de impresión del sistema.")
+            self.lbl_print_status.setStyleSheet("color: #2e7d32;")
         
     def copiar_texto(self):
         clipboard = QApplication.clipboard()
         clipboard.setText(self.ticket_text)
-        QMessageBox.information(self, "Copiado", "Texto del ticket copiado al portapapeles.")
+        self.lbl_print_status.setText("✓ Texto copiado al portapapeles.")
+        self.lbl_print_status.setStyleSheet("color: #1565c0;")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    db = SessionLocal()
+    last_inv = db.query(models.Invoice).order_by(models.Invoice.id.desc()).first()
+    inv_id = last_inv.id if last_inv else 1
+    db.close()
+    
+    dlg = TicketDialog(invoice_id=inv_id)
+    dlg.show()
+    sys.exit(app.exec())

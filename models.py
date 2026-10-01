@@ -39,11 +39,16 @@ class SyncOutbox(Base):
     __tablename__ = 'sync_outbox'
     id = Column(Integer, primary_key=True, index=True)
     entity_name = Column(String(50), nullable=False)
-    entity_uuid = Column(String(36), nullable=False)
-    action = Column(String(10), nullable=False) # INSERT or UPDATE
+    entity_uuid = Column(String(36), nullable=False, index=True)
+    action = Column(String(10), nullable=False) # INSERT, UPDATE, DELETE
     payload_json = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    synced = Column(Boolean, default=False)
+    synced = Column(Boolean, default=False, index=True)
+    synced_at = Column(DateTime, nullable=True)
+    retry_count = Column(Integer, default=0)
+    last_error = Column(String(255), nullable=True)
+    status = Column(String(20), default='PENDING', index=True) # PENDING, SYNCING, SYNCED, FAILED
+
 
 
 class Currency(Base):
@@ -127,8 +132,8 @@ class Client(Base):
     __tablename__ = 'clients'
     id = Column(Integer, primary_key=True, index=True)
     cli_codigo = Column(String(6), unique=True, index=True) 
-    cli_nombre = Column(String(60), nullable=False) 
-    cli_ruc = Column(String(30)) 
+    cli_nombre = Column(String(60), nullable=False, index=True) 
+    cli_ruc = Column(String(30), index=True) 
     cli_ci = Column(String(20)) 
     cli_direcc = Column(String(150)) 
     cli_telefo = Column(String(100)) 
@@ -206,6 +211,12 @@ class Payment(SyncableModel, Base):
     cob_metodo = Column(String(20), default='Efectivo') # Efectivo, Tarjeta, PIX
     cob_monto_pyg = Column(Numeric(asdecimal=True), default=0.0) # Monto equivalente en PYG
     session_id = Column(Integer, ForeignKey('cash_sessions.id'), nullable=True)
+    
+    # Integración Terminales POS / Tarjetas (SPEC-002)
+    auth_code = Column(String(64), nullable=True) # Código de autorización del adquirente
+    voucher_nro = Column(String(64), nullable=True) # Nro de comprobante / ticket de la terminal POS
+    card_brand = Column(String(32), nullable=True) # VISA, MASTERCARD, MAESTRO, etc.
+    terminal_id = Column(String(32), nullable=True) # ID o IP de la terminal POS física
     
     invoice = relationship("Invoice", back_populates="payments")
     session = relationship("CashSession", back_populates="payments")
@@ -369,11 +380,12 @@ class PriceListItem(Base):
 class CompanySettings(Base):
     __tablename__ = 'company_settings'
     id = Column(Integer, primary_key=True, index=True)
-    nombre = Column(String(100), nullable=False)
-    ruc = Column(String(30))
-    direccion = Column(String(150))
-    telefono = Column(String(50))
+    nombre = Column(String(100), nullable=False, default="SUPERMERCADO CENTRAL")
+    ruc = Column(String(30), default="80012345-6")
+    direccion = Column(String(150), default="Avda. San Blas e/ Curupayty - CDE")
+    telefono = Column(String(50), default="(061) 500-123")
     tipo_negocio = Column(String(50), default="Comercio") # Comercio, Restaurante, Servicios
+    timbrado = Column(String(20), default="12345678")
     
     # Flags de Configuración de Módulos
     ui_show_multicurrency = Column(Boolean, default=True)
@@ -381,6 +393,16 @@ class CompanySettings(Base):
     mod_inventory_fifo = Column(Boolean, default=True)
     mod_budgets = Column(Boolean, default=True)
     pos_strict_cash = Column(Boolean, default=True)
+
+    # Configuración de Impresora Térmica ESC/POS
+    printer_type = Column(String(20), default="SIMULATOR") # SIMULATOR, NETWORK, WINRAW, SERIAL
+    printer_ip = Column(String(50), default="192.168.1.200")
+    printer_port = Column(Integer, default=9100)
+    printer_name = Column(String(100), default="")
+    printer_serial_port = Column(String(20), default="COM1")
+    printer_paper_width = Column(Integer, default=40) # 40 columnas (80mm) o 32 columnas (58mm)
+    auto_cut = Column(Boolean, default=True)
+    open_drawer_on_cash = Column(Boolean, default=True)
 
 class Remission(SyncableModel, Base):
     """Nota de Remisión (F7)"""
@@ -500,11 +522,13 @@ def receive_after_update(mapper, connection, target):
 
 @event.listens_for(CashSession, 'after_insert')
 @event.listens_for(CashAudit, 'after_insert')
+@event.listens_for(CustomerTransaction, 'after_insert')
 def receive_after_insert_cash(mapper, connection, target):
     queue_sync_event(mapper, connection, target, 'INSERT')
 
 @event.listens_for(CashSession, 'after_update')
 @event.listens_for(CashAudit, 'after_update')
+@event.listens_for(CustomerTransaction, 'after_update')
 def receive_after_update_cash(mapper, connection, target):
     queue_sync_event(mapper, connection, target, 'UPDATE')
 
@@ -520,4 +544,5 @@ def receive_after_insert_purchases(mapper, connection, target):
 @event.listens_for(PurchaseItem, 'after_update')
 def receive_after_update_purchases(mapper, connection, target):
     queue_sync_event(mapper, connection, target, 'UPDATE')
+
 

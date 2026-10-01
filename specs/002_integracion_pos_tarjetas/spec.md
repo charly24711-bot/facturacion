@@ -1,6 +1,6 @@
 # SPEC-002: INTEGRACIÓN DE TERMINALES ELECTRÓNICAS DE COBRO (POS / PINPAD)
 
-**Estado:** En Planificación  
+**Estado:** Aprobado / Implementado  
 **Versión:** 1.0.0  
 **Fecha:** Septiembre 2026
 

@@ -6,6 +6,7 @@ from PyQt6.QtGui import QFont, QColor
 from database import SessionLocal
 import models
 from utils.formatting import aplicar_formato_moneda, parsear_monto
+from utils.pos_driver import POSTerminalWorker, POSTerminalSimulator
 from decimal import Decimal
 import math
 
@@ -20,11 +21,13 @@ class PaymentDialog(QDialog):
         self.client = client
         self.selected_client = client
         self.setWindowTitle("Cobro Split Multimoneda y Facturación [F11]")
-        self.resize(750, 700)
+        self.resize(780, 720)
         
         self.total_adeudado_pyg = Decimal(str(totals.get('PYG', 0.0)))
         self.payment_successful = False
         self.payments_list = []
+        self.terminal_payments_meta = {}
+        self.pos_worker = None
         
         # Cargar Tasas Activas
         self.tasas = self.cargar_tasas()
@@ -121,9 +124,14 @@ class PaymentDialog(QDialog):
         self.lbl_cotizacion_act = QLabel("Tasa: 1.0")
         
         btn_add = QPushButton("Agregar Pago")
-        btn_add.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
+        btn_add.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 6px 12px;")
         btn_add.setAutoDefault(False)
         btn_add.clicked.connect(self.agregar_pago)
+        
+        self.btn_pos_cobro = QPushButton("📲 Cobrar con Terminal POS [F7]")
+        self.btn_pos_cobro.setStyleSheet("background-color: #673AB7; color: white; font-weight: bold; padding: 6px 14px;")
+        self.btn_pos_cobro.setAutoDefault(False)
+        self.btn_pos_cobro.clicked.connect(self.iniciar_cobro_pos)
         
         layout_ingreso.addWidget(QLabel("Moneda:"))
         layout_ingreso.addWidget(self.combo_moneda)
@@ -133,12 +141,20 @@ class PaymentDialog(QDialog):
         layout_ingreso.addWidget(QLabel("Monto:"))
         layout_ingreso.addWidget(self.txt_monto)
         layout_ingreso.addWidget(btn_add)
+        layout_ingreso.addWidget(self.btn_pos_cobro)
         
         main_layout.addWidget(group_ingreso)
         
+        # --- ESTADO EN VIVO DE TERMINAL POS ---
+        self.lbl_pos_status = QLabel("")
+        self.lbl_pos_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_pos_status.setStyleSheet("color: #4a148c; font-weight: bold; font-size: 13px; background-color: #ede7f6; border-radius: 4px; padding: 4px;")
+        self.lbl_pos_status.setVisible(False)
+        main_layout.addWidget(self.lbl_pos_status)
+        
         # --- GRILLA DE PAGOS ---
-        self.table_pagos = QTableWidget(0, 5)
-        self.table_pagos.setHorizontalHeaderLabels(["Moneda", "Método", "Monto Origen", "Cotización (Compra)", "Subtotal (PYG)"])
+        self.table_pagos = QTableWidget(0, 6)
+        self.table_pagos.setHorizontalHeaderLabels(["Moneda", "Método", "Monto Origen", "Cotización", "Subtotal (PYG)", "Comprobante / Terminal"])
         self.table_pagos.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_pagos.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         main_layout.addWidget(self.table_pagos)
@@ -415,6 +431,84 @@ class PaymentDialog(QDialog):
         finally:
             db.close()
 
+    def iniciar_cobro_pos(self):
+        """Inicia la transacción interactiva contra la terminal POS física o simulada."""
+        moneda = self.combo_moneda.currentText()
+        tasa_compra = self.tasas.get(moneda, {}).get('buy', Decimal("1.0"))
+        
+        # Determinar monto a cobrar: Si se especificó en txt_monto se usa ese; si no, el total faltante
+        monto_str = parsear_monto(self.txt_monto.text(), moneda)
+        if monto_str and monto_str != "0":
+            monto_origen = Decimal(monto_str)
+        else:
+            # Calcular faltante pendiente convertido a la moneda seleccionada
+            total_recibido_pyg = Decimal("0")
+            for r in range(self.table_pagos.rowCount()):
+                it = self.table_pagos.item(r, 4)
+                if it: total_recibido_pyg += Decimal(it.text().replace(',', ''))
+            faltante_pyg = self.total_adeudado_pyg - total_recibido_pyg
+            if faltante_pyg <= 0:
+                QMessageBox.information(self, "Atención", "La factura ya se encuentra totalmente saldada.")
+                return
+            if moneda == "PYG":
+                monto_origen = faltante_pyg
+            else:
+                monto_origen = (faltante_pyg / tasa_compra).quantize(Decimal("0.01"))
+
+        if monto_origen <= 0:
+            return
+
+        self.btn_pos_cobro.setEnabled(False)
+        self.btn_cobrar.setEnabled(False)
+        self.lbl_pos_status.setVisible(True)
+        self.lbl_pos_status.setText(f"Iniciando cobro POS por {monto_origen:,.2f} {moneda}...")
+        self.lbl_pos_status.setStyleSheet("color: #4a148c; font-weight: bold; background-color: #ede7f6; padding: 6px; border-radius: 4px;")
+
+        self.pos_worker = POSTerminalWorker(amount=monto_origen, currency=moneda, parent=self)
+        self.pos_worker.status_changed.connect(self.on_pos_status_changed)
+        self.pos_worker.payment_approved.connect(self.on_pos_approved)
+        self.pos_worker.payment_failed.connect(self.on_pos_failed)
+        self.pos_worker.start()
+
+    def on_pos_status_changed(self, msg: str):
+        self.lbl_pos_status.setText(msg)
+
+    def on_pos_approved(self, result: dict):
+        self.lbl_pos_status.setText(f"✓ APROBADO | Auth: {result.get('auth_code')} | Voucher: {result.get('voucher_nro')} ({result.get('card_brand')})")
+        self.lbl_pos_status.setStyleSheet("color: #1b5e20; font-weight: bold; background-color: #e8f5e9; padding: 6px; border-radius: 4px;")
+        self.btn_pos_cobro.setEnabled(True)
+
+        moneda = result.get('currency', self.combo_moneda.currentText())
+        monto_origen = result.get('amount', Decimal("0"))
+        tasa_compra = self.tasas.get(moneda, {}).get('buy', Decimal("1.0"))
+        monto_pyg = (monto_origen * tasa_compra).quantize(Decimal("1"))
+        
+        metodo = f"Tarjeta {result.get('card_brand', 'POS')}"
+        info_voucher = f"Auth:{result.get('auth_code')} | {result.get('voucher_nro')}"
+
+        row = self.table_pagos.rowCount()
+        self.table_pagos.insertRow(row)
+        self.table_pagos.setItem(row, 0, QTableWidgetItem(moneda))
+        self.table_pagos.setItem(row, 1, QTableWidgetItem(metodo))
+        self.table_pagos.setItem(row, 2, QTableWidgetItem(f"{monto_origen:,.2f}".replace(".00", "")))
+        self.table_pagos.setItem(row, 3, QTableWidgetItem(f"{tasa_compra:,.2f}".replace(".00", "")))
+        self.table_pagos.setItem(row, 4, QTableWidgetItem(f"{monto_pyg:,.0f}"))
+        self.table_pagos.setItem(row, 5, QTableWidgetItem(info_voucher))
+
+        self.terminal_payments_meta[row] = result
+        self.txt_monto.clear()
+        self.actualizar_saldos()
+
+        if self.btn_cobrar.isEnabled():
+            self.btn_cobrar.setFocus()
+
+    def on_pos_failed(self, error_msg: str):
+        self.lbl_pos_status.setText(f"✕ {error_msg}")
+        self.lbl_pos_status.setStyleSheet("color: #b71c1c; font-weight: bold; background-color: #ffebee; padding: 6px; border-radius: 4px;")
+        self.btn_pos_cobro.setEnabled(True)
+        self.actualizar_saldos()
+        QMessageBox.warning(self, "Operación POS No Concretada", error_msg)
+
     def procesar_cobro(self):
         self.payments_list = []
         for row in range(self.table_pagos.rowCount()):
@@ -423,11 +517,17 @@ class PaymentDialog(QDialog):
             monto_origen = Decimal(self.table_pagos.item(row, 2).text().replace(',', ''))
             monto_pyg = Decimal(self.table_pagos.item(row, 4).text().replace(',', ''))
             
+            meta = self.terminal_payments_meta.get(row, {})
+            
             self.payments_list.append({
                 'moneda': moneda,
                 'metodo': metodo,
                 'monto_origen': monto_origen,
-                'monto_pyg': monto_pyg
+                'monto_pyg': monto_pyg,
+                'auth_code': meta.get('auth_code'),
+                'voucher_nro': meta.get('voucher_nro'),
+                'card_brand': meta.get('card_brand'),
+                'terminal_id': meta.get('terminal_id')
             })
             
         self.resolver_cliente_final()
@@ -436,14 +536,40 @@ class PaymentDialog(QDialog):
         faltante = self.total_adeudado_pyg - total_recibido
         self.vuelto_devuelto_pyg = abs(faltante) if faltante < 0 else Decimal('0')
         
+        # Apertura de cajón de dinero si hubo pago en efectivo
+        tiene_efectivo = any(p['metodo'] == 'Efectivo' for p in self.payments_list)
+        if tiene_efectivo:
+            try:
+                from utils.escpos_driver import ESCPOSPrinterDriver
+                db_sett = SessionLocal()
+                comp = db_sett.query(models.CompanySettings).first()
+                if comp and comp.open_drawer_on_cash:
+                    drv = ESCPOSPrinterDriver(
+                        connection_type=comp.printer_type or 'SIMULATOR',
+                        ip=comp.printer_ip or '192.168.1.200',
+                        port=comp.printer_port or 9100,
+                        printer_name=comp.printer_name or '',
+                        serial_port=comp.printer_serial_port or 'COM1'
+                    )
+                    drv.open_drawer()
+                db_sett.close()
+            except Exception:
+                pass
+
         self.payment_successful = True
         self.accept()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.reject()
+        elif event.key() == Qt.Key.Key_F7:
+            self.iniciar_cobro_pos()
+            event.accept()
+            return
         elif event.key() == Qt.Key.Key_F8:
             self.abrir_busqueda_cliente()
+            event.accept()
+            return
         elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             # Si el foco está en el campo de monto, procesar agregar pago
             if self.txt_monto.hasFocus():

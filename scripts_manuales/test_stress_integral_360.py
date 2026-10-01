@@ -4,8 +4,9 @@ import time
 import datetime
 from decimal import Decimal
 
-# Importar validador obligatorio de habilidades
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.agents/skills')))
+# Importar validador obligatorio de habilidades y raíz del proyecto
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.agents/skills')))
 from validator.validator import POSGuardrail
 
 from database import SessionLocal, engine, Base

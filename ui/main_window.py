@@ -18,7 +18,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../.age
 from validator.validator import POSGuardrail
 from decimal import Decimal
 from ui.ventas_table_model import VentasTableModel
-from ui.sync_worker import SyncWorker
+from ui.sync_worker import SyncWorker, MockSyncTransport
+from ui.sync_status_widget import SyncStatusWidget
+from PyQt6.QtGui import QKeySequence, QShortcut
 
 def _safe_dec(v):
     from decimal import Decimal
@@ -115,10 +117,10 @@ class MainWindow(QMainWindow):
         toolbar_layout.setContentsMargins(10, 6, 10, 6)
         toolbar_layout.setSpacing(15)
 
-        # 1. Info Red & Fecha
-        self.lbl_network_status = QLabel("🔴 Offline")
-        self.lbl_network_status.setStyleSheet("color: #f7768e; font-weight: bold; border: none; background: transparent;")
-        toolbar_layout.addWidget(self.lbl_network_status)
+        # 1. Info Red & Sincronización
+        self.sync_status_widget = SyncStatusWidget()
+        self.lbl_network_status = self.sync_status_widget.lbl_status
+        toolbar_layout.addWidget(self.sync_status_widget)
         
         from PyQt6.QtCore import QDate
         lbl_fecha = QLabel(f"📅 {QDate.currentDate().toString('dd-MM-yyyy')}")
@@ -220,6 +222,22 @@ class MainWindow(QMainWindow):
         """)
         btn_buscar.clicked.connect(self.open_product_search)
         scanner_layout.addWidget(btn_buscar)
+
+        btn_tactil = QPushButton("🖐️ Táctil [F6]")
+        btn_tactil.setStyleSheet("""
+            QPushButton {
+                background-color: #2e3a59;
+                border: 2px solid #7aa2f7;
+                border-radius: 8px;
+                padding: 10px 18px;
+                font-size: 18px;
+                font-weight: bold;
+                color: #ffffff;
+            }
+            QPushButton:hover { background-color: #3b4b73; }
+        """)
+        btn_tactil.clicked.connect(self.open_touch_catalog)
+        scanner_layout.addWidget(btn_tactil)
 
         self.chk_visor = QCheckBox("Mostrar Visor Lateral")
         self.chk_visor.setStyleSheet("font-size: 14px; font-weight: bold;")
@@ -599,11 +617,23 @@ class MainWindow(QMainWindow):
         self.cargar_historial_ventas()
         self.setup_autocomplete()
         
-        # Iniciar Sincronización
-        self.sync_worker = SyncWorker()
-        self.sync_worker.status_changed.connect(self.update_network_status)
+        # Iniciar Sincronización Offline-First
+        self.sync_transport = MockSyncTransport(is_online=True)
+        self.sync_worker = SyncWorker(transport=self.sync_transport, sync_interval_seconds=15)
+        self.sync_worker.status_changed.connect(self.sync_status_widget.update_status)
+        self.sync_worker.sync_completed.connect(self.sync_status_widget.on_sync_completed)
+        self.sync_status_widget.manual_sync_requested.connect(self.sync_worker.trigger_sync_now)
+
+        # Atajo F11 para forzar sincronización
+        self.shortcut_sync_f11 = QShortcut(QKeySequence(Qt.Key.Key_F11), self)
+        self.shortcut_sync_f11.activated.connect(self.sync_status_widget._on_sync_clicked)
+
+        # Atajo F6 para Catálogo Táctil
+        self.shortcut_touch_f6 = QShortcut(QKeySequence(Qt.Key.Key_F6), self)
+        self.shortcut_touch_f6.activated.connect(self.open_touch_catalog)
+
         self.sync_worker.start()
-        
+
         self.apply_environment_config()
 
     def apply_environment_config(self):
@@ -620,13 +650,24 @@ class MainWindow(QMainWindow):
         # Multimoneda (Fijo para Triple Frontera)
         pass
 
+    def open_touch_catalog(self):
+        from ui.touch_catalog_dialog import TouchCatalogDialog
+        from PyQt6.QtWidgets import QDialog
+        dialog = TouchCatalogDialog(parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            product, qty = dialog.get_selection()
+            if product:
+                precio_vigente, _ = self.get_precio_vigente(product.art_codigo, qty)
+                self.ventas_model.add_item(product, cantidad=qty, precio_override=precio_vigente)
+                self.calcular_totales()
+                self.txt_codigo.clear()
+                self.txt_codigo.setFocus()
+
     def update_network_status(self, is_online):
         if is_online:
-            self.lbl_network_status.setText("🟢 Online (Sincronizando)")
-            self.lbl_network_status.setStyleSheet("color: green; font-weight: bold; font-size: 14px;")
+            self.sync_status_widget.update_status('ONLINE', 0)
         else:
-            self.lbl_network_status.setText("🔴 Modo Local (Offline)")
-            self.lbl_network_status.setStyleSheet("color: red; font-weight: bold; font-size: 14px;")
+            self.sync_status_widget.update_status('OFFLINE', 0)
             
     def closeEvent(self, event):
         if hasattr(self, 'sync_worker'):
@@ -814,7 +855,11 @@ class MainWindow(QMainWindow):
                     cob_vennro=nueva_venta.ven_numero,
                     cob_mndori=p['moneda'],
                     cob_metodo=p['metodo'],
-                    session_id=self.session_id
+                    session_id=self.session_id,
+                    auth_code=p.get('auth_code'),
+                    voucher_nro=p.get('voucher_nro'),
+                    card_brand=p.get('card_brand'),
+                    terminal_id=p.get('terminal_id')
                 )
                 db.add(pago)
                 
@@ -1558,6 +1603,17 @@ class MainWindow(QMainWindow):
         action_tiers = QAction("💰 Precios por Volumen", self)
         action_tiers.triggered.connect(self.open_price_tiers_dialog)
         menu_util.addAction(action_tiers)
+
+        menu_util.addSeparator()
+
+        action_fiscal = QAction("📊 Liquidación Fiscal & SIFEN (KuDE)", self)
+        action_fiscal.triggered.connect(self.open_backoffice_fiscal)
+        menu_util.addAction(action_fiscal)
+
+    def open_backoffice_fiscal(self):
+        from ui.backoffice_fiscal_dialog import BackofficeFiscalDialog
+        dialog = BackofficeFiscalDialog(self)
+        dialog.exec()
 
     def open_purchase_dialog(self):
         from ui.purchase_dialog import PurchaseDialog

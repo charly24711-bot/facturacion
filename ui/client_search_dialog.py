@@ -1,11 +1,16 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLineEdit, QPushButton, QHBoxLayout, QHeaderView
+import sys
+import os
+
+# Asegurar que la raíz del proyecto y skills estén en sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.agents/skills')))
+
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, 
+                             QLineEdit, QPushButton, QHBoxLayout, QHeaderView, QApplication)
 from PyQt6.QtCore import Qt
 from database import SessionLocal, strip_accents
 from sqlalchemy import func
 import models
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../.agents/skills')))
 from ruc_validator.ruc_validator import obtener_contribuyente, formatear_ruc
 
 class ClientSearchDialog(QDialog):
@@ -151,3 +156,9 @@ class ClientSearchDialog(QDialog):
             self.selected_client = data
             
         self.accept()
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    dlg = ClientSearchDialog()
+    dlg.show()
+    sys.exit(app.exec())

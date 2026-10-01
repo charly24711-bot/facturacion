@@ -154,3 +154,48 @@ def init_users():
         db.close()
 
 
+def check_and_migrate_db():
+    """Verifica y migra esquemas existentes en SQLite si faltan columnas."""
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            # 1. Company Settings
+            res = conn.execute(text("PRAGMA table_info(company_settings);")).fetchall()
+            existing_cols = {row[1] for row in res}
+            new_cols = {
+                "timbrado": "VARCHAR(20) DEFAULT '12345678'",
+                "printer_type": "VARCHAR(20) DEFAULT 'SIMULATOR'",
+                "printer_ip": "VARCHAR(50) DEFAULT '192.168.1.200'",
+                "printer_port": "INTEGER DEFAULT 9100",
+                "printer_name": "VARCHAR(100) DEFAULT ''",
+                "printer_serial_port": "VARCHAR(20) DEFAULT 'COM1'",
+                "printer_paper_width": "INTEGER DEFAULT 40",
+                "auto_cut": "BOOLEAN DEFAULT 1",
+                "open_drawer_on_cash": "BOOLEAN DEFAULT 1"
+            }
+            for col_name, col_type in new_cols.items():
+                if col_name not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE company_settings ADD COLUMN {col_name} {col_type};"))
+                    conn.commit()
+
+            # 2. Sync Outbox
+            res_outbox = conn.execute(text("PRAGMA table_info(sync_outbox);")).fetchall()
+            existing_outbox_cols = {row[1] for row in res_outbox}
+            outbox_new_cols = {
+                "retry_count": "INTEGER DEFAULT 0",
+                "last_error": "VARCHAR(255) DEFAULT NULL",
+                "status": "VARCHAR(20) DEFAULT 'PENDING'",
+                "synced_at": "DATETIME DEFAULT NULL"
+            }
+            for col_name, col_type in outbox_new_cols.items():
+                if col_name not in existing_outbox_cols:
+                    conn.execute(text(f"ALTER TABLE sync_outbox ADD COLUMN {col_name} {col_type};"))
+                    conn.commit()
+    except Exception:
+        pass
+
+# Ejecutar migración preventiva
+check_and_migrate_db()
+
+
+

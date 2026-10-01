@@ -1,7 +1,7 @@
 # PLAN-002: ARQUITECTURA TÉCNICA DE INTEGRACIÓN POS / PINPAD
 
 **Especificación Asociada:** [SPEC-002](file:///c:/ENTORNO%20LOCAL/Control/specs/002_integracion_pos_tarjetas/spec.md)  
-**Estado:** En Diseño
+**Estado:** Implementado
 
 ---
 
