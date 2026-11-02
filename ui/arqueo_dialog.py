@@ -151,7 +151,7 @@ class ArqueoDialog(QDialog):
                     
             # 4. Cerrar Sesión
             session.status = 'CLOSED'
-            session.closed_at = datetime.datetime.utcnow()
+            session.closed_at = datetime.datetime.now()
             
             db.commit()
             

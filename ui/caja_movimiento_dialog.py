@@ -231,7 +231,7 @@ class CajaMovimientoDialog(QDialog):
                 monto=monto,
                 moneda=mnd_sel,
                 concepto=concepto,
-                fecha=datetime.datetime.utcnow(),
+                fecha=datetime.datetime.now(),
                 user_id=self.current_user.get('id', 1)
             )
             db.add(mov)

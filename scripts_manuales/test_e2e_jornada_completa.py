@@ -63,7 +63,7 @@ def test_jornada_completa_e2e(db_session):
     session_uid = 999
     caja = models.CashSession(
         user_id=1,
-        opened_at=datetime.utcnow(),
+        opened_at=datetime.now(),
         status='OPEN'
     )
     db_session.add(caja)

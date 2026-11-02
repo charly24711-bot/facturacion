@@ -404,7 +404,7 @@ def run_stress_suite_360():
 
     # Bloquear la sesión a CLOSED
     sesion_stress.status = 'CLOSED'
-    sesion_stress.closed_at = datetime.datetime.utcnow()
+    sesion_stress.closed_at = datetime.datetime.now()
     db.commit()
 
     # Validar persistencia y cálculos

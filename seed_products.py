@@ -75,7 +75,7 @@ def seed_supermarket_data():
                 lote = models.ProductBatch(
                     product_id=prod.id,
                     lote="LOTE-001",
-                    fecha_vencimiento=datetime.datetime.utcnow() + datetime.timedelta(days=15),
+                    fecha_vencimiento=datetime.datetime.now() + datetime.timedelta(days=15),
                     stock_actual=p["stock"]
                 )
                 db.add(lote)

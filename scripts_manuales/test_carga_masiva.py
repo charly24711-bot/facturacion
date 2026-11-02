@@ -138,7 +138,7 @@ def generate_mock_data():
             lote = models.ProductBatch(
                 product_id=p.id,
                 lote=f"LT-{random.randint(1000,9999)}",
-                fecha_vencimiento=datetime.datetime.utcnow() + datetime.timedelta(days=random.randint(30, 365)),
+                fecha_vencimiento=datetime.datetime.now() + datetime.timedelta(days=random.randint(30, 365)),
                 stock_actual=qty
             )
             db.add(lote)

@@ -70,7 +70,7 @@ def main():
         lote = models.ProductBatch(
             product_id=nuevo_prod.id,
             lote="LOTE-TEST-01",
-            fecha_vencimiento=datetime.datetime.utcnow() + datetime.timedelta(days=365),
+            fecha_vencimiento=datetime.datetime.now() + datetime.timedelta(days=365),
             stock_actual=qty_comprada
         )
         db.add(lote)
@@ -86,7 +86,7 @@ def main():
         # Fondo Fijo de 150,000 Gs
         fondo = models.Payment(
             cob_numero=9000000 + session.id,
-            cob_fecha=datetime.datetime.utcnow(),
+            cob_fecha=datetime.datetime.now(),
             cob_monto=Decimal('150000'),
             cob_mndori='PYG',
             cob_metodo='FondoFijo',
@@ -201,7 +201,7 @@ def main():
         db.add(audit)
         
         session.status = 'CLOSED'
-        session.closed_at = datetime.datetime.utcnow()
+        session.closed_at = datetime.datetime.now()
         db.commit()
         print("  [+] Arqueo Cuadrado a Cero (0 Diferencia). Turno Cerrado Exitosamente.")
         

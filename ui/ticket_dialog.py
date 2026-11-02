@@ -384,7 +384,7 @@ class TicketDialog(QDialog):
             pto_exp = "001"
             nro_sec = f"{(invoice.ven_numero or invoice.id):07d}"
             tipo_contrib = "1"
-            fec_emision = invoice.ven_fecha or datetime.datetime.utcnow()
+            fec_emision = invoice.ven_fecha or datetime.datetime.now()
             fecha_cad = fec_emision.strftime("%Y%m%d")
             tipo_emision = "1"
             cod_seguridad = "100000001"

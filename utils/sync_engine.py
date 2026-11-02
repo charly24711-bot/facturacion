@@ -147,7 +147,7 @@ class MockSyncTransport(SyncTransport):
         if not self.is_online or self.should_fail:
             raise ConnectionError("Error al consultar catálogo del servidor")
 
-        now_str = datetime.datetime.utcnow().isoformat()
+        now_str = datetime.datetime.now().isoformat()
         return {
             "success": True,
             "products": list(self.mock_products),
@@ -203,7 +203,7 @@ class HttpSyncTransport(SyncTransport):
         payload = {
             "branch_code": self.branch_code,
             "terminal_id": self.terminal_id,
-            "sent_at": datetime.datetime.utcnow().isoformat(),
+            "sent_at": datetime.datetime.now().isoformat(),
             "batch": outbox_entries
         }
         data_bytes = sync_dumps(payload).encode('utf-8')
@@ -258,7 +258,7 @@ class OutboxManager:
             entity_uuid=entity_uuid,
             action=action.upper(),
             payload_json=payload_str,
-            created_at=datetime.datetime.utcnow(),
+            created_at=datetime.datetime.now(),
             synced=False,
             status='PENDING',
             retry_count=0
@@ -287,7 +287,7 @@ class OutboxManager:
         """Marca como sincronizados los registros cuyos UUIDs fueron confirmados por el servidor."""
         if not entity_uuids:
             return 0
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now()
         count = (
             session.query(SyncOutbox)
             .filter(SyncOutbox.entity_uuid.in_(entity_uuids))
@@ -365,7 +365,7 @@ class OutboxManager:
                     currency_code=code,
                     buy_rate=Decimal(str(buy)),
                     sell_rate=Decimal(str(sell)),
-                    created_at=datetime.datetime.utcnow(),
+                    created_at=datetime.datetime.now(),
                     is_active=True
                 )
                 session.add(new_rate)

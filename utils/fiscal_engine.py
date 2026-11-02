@@ -41,7 +41,7 @@ def generate_cdc(
     tipo_doc = "01"  # Factura Electrónica
     nro_sec = f"{(ven_numero or invoice_id):07d}"
     tipo_contrib = "1"  # Persona Jurídica
-    fec = ven_fecha or datetime.datetime.utcnow()
+    fec = ven_fecha or datetime.datetime.now()
     fecha_cad = fec.strftime("%Y%m%d")
     tipo_emision = "1"  # Normal
     cod_seguridad = "100000001"
@@ -251,7 +251,7 @@ class FiscalEngine:
 
         sifen_payload = {
             "version": "150",
-            "generado_el": datetime.datetime.utcnow().isoformat(),
+            "generado_el": datetime.datetime.now().isoformat(),
             "emisor": {
                 "ruc": partes_ruc[0],
                 "dv": partes_ruc[1],
