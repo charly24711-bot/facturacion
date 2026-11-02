@@ -153,6 +153,8 @@ class PromosDialog(QDialog):
             return
         try:
             precio = Decimal(parsear_monto(self.txt_precio.text(), "PYG"))
+            if precio <= Decimal("0"):
+                raise ValueError
         except Exception:
             QMessageBox.warning(self, "Error", "Precio inválido.")
             return
@@ -163,17 +165,23 @@ class PromosDialog(QDialog):
             return
 
         db = SessionLocal()
-        promo = models.ProductPromo(
-            pro_articu=self.current_product_cod,
-            pro_precio=precio,
-            pro_desde=datetime.datetime.combine(desde, datetime.time.min),
-            pro_hasta=datetime.datetime.combine(hasta, datetime.time(23, 59, 59)),
-            pro_descri=self.txt_descri.text().strip() or "Promo",
-            is_active=True
-        )
-        db.add(promo)
-        db.commit()
-        db.close()
+        try:
+            promo = models.ProductPromo(
+                pro_articu=self.current_product_cod,
+                pro_precio=precio,
+                pro_desde=datetime.datetime.combine(desde, datetime.time.min),
+                pro_hasta=datetime.datetime.combine(hasta, datetime.time(23, 59, 59)),
+                pro_descri=self.txt_descri.text().strip() or "Promo",
+                is_active=True
+            )
+            db.add(promo)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            QMessageBox.critical(self, "Error", str(e))
+            return
+        finally:
+            db.close()
 
         self.txt_prod.clear()
         self.txt_precio.clear()

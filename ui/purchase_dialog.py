@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt, QTimer, QStringListModel, QDate
 from PyQt6.QtGui import QFont
 
-from database import SessionLocal
+from database import SessionLocal, format_stock_qty
 import models
 from utils.formatting import aplicar_formato_moneda, parsear_monto
 
@@ -207,8 +207,8 @@ class PurchaseDialog(QDialog):
             # Suggest last cost for the SINGLE unit, or multiplied by factor?
             # Usually the user enters the cost of what they are scanning (the pack).
             # So we suggest the cost * factor.
-            suggested_cost = (prod.art_costo or Decimal('0')) * factor
-            self.txt_cost.setText(f"{float(suggested_cost):.0f}") 
+            suggested_cost = (Decimal(str(prod.art_costo or 0)) * factor).quantize(Decimal('1'))
+            self.txt_cost.setText(f"{suggested_cost:.0f}") 
             
             self.txt_qty.setFocus()
             self.txt_qty.selectAll()
@@ -241,20 +241,21 @@ class PurchaseDialog(QDialog):
             return
             
         # Calculate real quantity and unit cost based on the pack factor
-        real_qty = qty_input * self.current_factor
-        unit_cost = cost_input / self.current_factor
+        real_qty = (qty_input * self.current_factor).quantize(Decimal('0.001'))
+        unit_cost = (cost_input / self.current_factor).quantize(Decimal('1'))
         
         # Validation for lower cost: show CPP preview
-        stock_actual = int(self.current_product.art_stkini or 0) if self.current_product.art_stkini else 0
-        if self.costo_registrado > 0 and unit_cost < self.costo_registrado:
-            cpp_nuevo = (stock_actual * self.costo_registrado + real_qty * unit_cost) / (stock_actual + real_qty) if (stock_actual + real_qty) > 0 else unit_cost
+        stock_actual = Decimal(str(self.current_product.art_stkini or 0))
+        if self.costo_registrado > Decimal('0') and unit_cost < self.costo_registrado:
+            stock_positivo = max(Decimal('0'), stock_actual)
+            cpp_nuevo = ((stock_positivo * self.costo_registrado + real_qty * unit_cost) / (stock_positivo + real_qty)).quantize(Decimal('1')) if (stock_positivo + real_qty) > Decimal('0') else unit_cost
             resp = QMessageBox.question(
                 self, 
                 "Costo Inferior al Registrado", 
                 f"El nuevo costo unitario (\u20b2 {unit_cost:,.0f}) es INFERIOR al costo actual (\u20b2 {self.costo_registrado:,.0f})."
-                f"\n\nExisten {stock_actual} unidades en stock al precio anterior."
+                f"\n\nExisten {format_stock_qty(stock_actual)} unidades en stock al precio anterior."
                 f"\n\nSi confirma, el sistema calculará el Costo Promedio Ponderado:"
-                f"\n  CPP = ({stock_actual} u × \u20b2{self.costo_registrado:,.0f} + {float(real_qty):g} u × \u20b2{unit_cost:,.0f}) / {stock_actual + int(real_qty)} u"
+                f"\n  CPP = ({format_stock_qty(stock_positivo)} u × \u20b2{self.costo_registrado:,.0f} + {format_stock_qty(real_qty)} u × \u20b2{unit_cost:,.0f}) / {format_stock_qty(stock_positivo + real_qty)} u"
                 f"\n  \u21d2 Nuevo Costo Promedio: \u20b2 {cpp_nuevo:,.0f}"
                 f"\n\n\u00bfConfirmar precio rebajado y recalcular CPP?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -265,7 +266,7 @@ class PurchaseDialog(QDialog):
                 self.txt_cost.selectAll()
                 return
                 
-        subtotal = cost_input * qty_input
+        subtotal = (cost_input * qty_input).quantize(Decimal('1'))
         
         lote_val = self.txt_lote.text().strip()
         venc_date = self.date_venc.date()
@@ -286,15 +287,15 @@ class PurchaseDialog(QDialog):
         self.table.setItem(row, 0, QTableWidgetItem(self.current_product.art_codigo))
         
         desc_text = self.current_product.art_descri
-        if self.current_factor > 1:
-            desc_text += f" (Ingresado como Pack x{self.current_factor})"
+        if self.current_factor > Decimal('1'):
+            desc_text += f" (Ingresado como Pack x{format_stock_qty(self.current_factor)})"
             
         self.table.setItem(row, 1, QTableWidgetItem(desc_text))
         self.table.setItem(row, 2, QTableWidgetItem(lote_val or "-"))
         self.table.setItem(row, 3, QTableWidgetItem(venc_val.strftime("%d/%m/%Y") if venc_val else "-"))
-        self.table.setItem(row, 4, QTableWidgetItem(f"{float(real_qty):g}"))
-        self.table.setItem(row, 5, QTableWidgetItem(f"{float(unit_cost):,.0f}"))
-        self.table.setItem(row, 6, QTableWidgetItem(f"{float(subtotal):,.0f}"))
+        self.table.setItem(row, 4, QTableWidgetItem(format_stock_qty(real_qty)))
+        self.table.setItem(row, 5, QTableWidgetItem(f"{unit_cost:,.0f}"))
+        self.table.setItem(row, 6, QTableWidgetItem(f"{subtotal:,.0f}"))
         
         self.actualizar_total()
         
@@ -310,8 +311,8 @@ class PurchaseDialog(QDialog):
         self.txt_search.setFocus()
         
     def actualizar_total(self):
-        self.total = sum(i['subtotal'] for i in self.items)
-        self.lbl_total.setText(f"Total Factura: ₲ {float(self.total):,.0f}")
+        self.total = sum((i['subtotal'] for i in self.items), Decimal('0'))
+        self.lbl_total.setText(f"Total Factura: ₲ {self.total:,.0f}")
         
     def procesar_compra(self):
         if not self.items:
@@ -348,7 +349,7 @@ class PurchaseDialog(QDialog):
         db.commit()
         db.refresh(compra)
         
-        # 3. Detalles y Actualización de Stock
+        # 3. Detalles, Lotes FEFO y Actualización de Stock con Kardex
         for itm in self.items:
             detalle = models.PurchaseItem(
                 cit_compra_id=compra.id,
@@ -358,22 +359,54 @@ class PurchaseDialog(QDialog):
             )
             db.add(detalle)
             
-            # Actualizar Stock con CPP (Costo Promedio Ponderado)
+            # Actualizar Stock con CPP (Costo Promedio Ponderado) en Decimal estricto
             prod = db.query(models.Product).filter_by(art_codigo=itm['cod']).first()
             if prod:
-                stock_anterior = int(prod.art_stkini) if prod.art_stkini else 0
-                costo_anterior = float(prod.art_costo) if prod.art_costo else 0.0
-                qty_nueva = int(itm['qty'])
-                costo_nuevo = float(itm['cost'])
+                stock_anterior = Decimal(str(prod.art_stkini or '0'))
+                costo_anterior = Decimal(str(prod.art_costo or '0'))
+                qty_nueva = Decimal(str(itm['qty']))
+                costo_nuevo = Decimal(str(itm['cost']))
                 
+                stock_positivo = max(Decimal('0'), stock_anterior)
                 stock_total = stock_anterior + qty_nueva
-                if stock_total > 0:
-                    cpp = (stock_anterior * costo_anterior + qty_nueva * costo_nuevo) / stock_total
+                if (stock_positivo + qty_nueva) > Decimal('0'):
+                    cpp = ((stock_positivo * costo_anterior + qty_nueva * costo_nuevo) / (stock_positivo + qty_nueva)).quantize(Decimal('1'))
                 else:
-                    cpp = costo_nuevo
+                    cpp = costo_nuevo.quantize(Decimal('1'))
                     
                 prod.art_stkini = stock_total
-                prod.art_costo = round(cpp, 2)
+                prod.art_costo = cpp
+
+                # Crear lote en ProductBatch para trazabilidad FEFO
+                lote_str = itm.get('lote') or f"COMP-{compra.id}"
+                venc_date = itm.get('vencimiento')
+                if venc_date:
+                    venc_dt = datetime.datetime.combine(venc_date, datetime.time.min)
+                else:
+                    venc_dt = datetime.datetime.now() + datetime.timedelta(days=365)
+
+                nuevo_lote = models.ProductBatch(
+                    product_id=prod.id,
+                    lote=lote_str,
+                    fecha_vencimiento=venc_dt,
+                    stock_actual=qty_nueva
+                )
+                db.add(nuevo_lote)
+
+                # Registrar en Kardex inmutable
+                parent_user = getattr(self.parent(), 'current_user', None)
+                uid = parent_user.get('id') if isinstance(parent_user, dict) else 1
+                db.add(models.InventoryMovement(
+                    art_codigo=prod.art_codigo,
+                    tipo_movimiento='COMPRA',
+                    cantidad=qty_nueva,
+                    stock_anterior=stock_anterior,
+                    stock_resultante=stock_total,
+                    comprobante=f"Compra #{compra.id} ({nro_fac})",
+                    terminal_id='BACKOFFICE',
+                    user_id=uid,
+                    observacion=f"Ingreso lote {lote_str} | CPP: Gs. {cpp:,.0f}"
+                ))
                 
         db.commit()
         db.close()

@@ -76,6 +76,7 @@ class CajaDialog(QDialog):
         
         btn_imprimir = QPushButton("Imprimir Cierre (Z)")
         btn_imprimir.setStyleSheet("background-color: #1565c0; color: white; font-weight: bold; padding: 8px 14px;")
+        btn_imprimir.clicked.connect(self.abrir_cierre_z)
         
         btn_cerrar = QPushButton("Cerrar")
         btn_cerrar.setStyleSheet("padding: 8px 14px;")
@@ -96,94 +97,114 @@ class CajaDialog(QDialog):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.cargar_movimientos_hoy()
         
+    def abrir_cierre_z(self):
+        from ui.arqueo_dialog import ArqueoDialog
+        session_id = self.session_id or 1
+        dlg = ArqueoDialog(session_id, self)
+        if dlg.exec():
+            self.cargar_movimientos_hoy()
+
     def cargar_movimientos_hoy(self):
         db = SessionLocal()
-        
-        # Obtener fecha de hoy (inicio y fin)
-        hoy = datetime.datetime.utcnow().date()
-        inicio_dia = datetime.datetime(hoy.year, hoy.month, hoy.day)
-        fin_dia = datetime.datetime(hoy.year, hoy.month, hoy.day, 23, 59, 59)
-        
-        pagos = db.query(models.Payment).filter(
-            models.Payment.cob_fecha >= inicio_dia,
-            models.Payment.cob_fecha <= fin_dia
-        ).all()
+        try:
+            # Obtener fecha de hoy en hora local (Paraguay UTC-3)
+            hoy = datetime.date.today()
+            inicio_dia = datetime.datetime.combine(hoy, datetime.time.min)
+            fin_dia = datetime.datetime.combine(hoy, datetime.time.max)
+            
+            q_pagos = db.query(models.Payment).filter(
+                models.Payment.cob_fecha >= inicio_dia,
+                models.Payment.cob_fecha <= fin_dia
+            )
+            q_movs = db.query(models.CashMovement).filter(
+                models.CashMovement.fecha >= inicio_dia,
+                models.CashMovement.fecha <= fin_dia
+            )
 
-        movs = db.query(models.CashMovement).filter(
-            models.CashMovement.fecha >= inicio_dia,
-            models.CashMovement.fecha <= fin_dia
-        ).all()
-        
-        totales = {"PYG": Decimal('0'), "USD": Decimal('0'), "BRL": Decimal('0'), "ARS": Decimal('0')}
-        
-        self.table.setRowCount(0)
-        row = 0
+            if self.session_id:
+                q_pagos = q_pagos.filter(models.Payment.session_id == self.session_id)
+                q_movs = q_movs.filter(models.CashMovement.session_id == self.session_id)
 
-        # Cargar pagos / cobranzas de ventas
-        for pago in pagos:
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(f"COB-{pago.id}"))
+            pagos = q_pagos.all()
+            movs = q_movs.all()
             
-            hora = pago.cob_fecha.strftime("%H:%M:%S")
-            self.table.setItem(row, 1, QTableWidgetItem(hora))
-            self.table.setItem(row, 2, QTableWidgetItem(f"VENTA ({pago.cob_metodo})"))
-            self.table.setItem(row, 3, QTableWidgetItem(f"Factura Nº {pago.cob_vennro}"))
+            # Totales de Efectivo Físico en Cajón (excluye Tarjetas, PIX y Cuenta Corriente)
+            totales_efectivo = {"PYG": Decimal('0'), "USD": Decimal('0'), "BRL": Decimal('0'), "ARS": Decimal('0')}
+            totales_digitales = {"PYG": Decimal('0'), "USD": Decimal('0'), "BRL": Decimal('0'), "ARS": Decimal('0')}
             
-            monto_dec = Decimal(str(pago.cob_monto or '0'))
-            monto_str = f"{monto_dec:,.0f}" if pago.cob_mndori == "PYG" else f"{monto_dec:,.2f}"
-            
-            item_monto = QTableWidgetItem(monto_str)
-            item_monto.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row, 4, item_monto)
-            self.table.setItem(row, 5, QTableWidgetItem(pago.cob_mndori))
-            
-            if pago.cob_mndori in totales:
-                totales[pago.cob_mndori] += monto_dec
-            row += 1
+            self.table.setRowCount(0)
+            row = 0
 
-        # Cargar movimientos de caja (Fondo Inicial / Sangrías)
-        for m in movs:
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(f"MOV-{m.id}"))
-            
-            hora = m.fecha.strftime("%H:%M:%S")
-            self.table.setItem(row, 1, QTableWidgetItem(hora))
-            
-            es_ingreso = m.tipo in ('FONDO_INICIAL', 'INGRESO')
-            tipo_label = "📥 FONDO/ING." if es_ingreso else "📤 SANGRÍA/RET."
-            item_tipo = QTableWidgetItem(tipo_label)
-            if not es_ingreso:
-                item_tipo.setForeground(QColor("#c62828"))
-            else:
-                item_tipo.setForeground(QColor("#2e7d32"))
-            self.table.setItem(row, 2, item_tipo)
-            
-            self.table.setItem(row, 3, QTableWidgetItem(m.concepto or "-"))
-            
-            monto_dec = Decimal(str(m.monto or '0'))
-            signo = "+" if es_ingreso else "-"
-            monto_str = f"{signo}{monto_dec:,.0f}" if m.moneda == "PYG" else f"{signo}{monto_dec:,.2f}"
-            
-            item_monto = QTableWidgetItem(monto_str)
-            item_monto.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            if not es_ingreso:
-                item_monto.setForeground(QColor("#c62828"))
-            else:
-                item_monto.setForeground(QColor("#2e7d32"))
-            self.table.setItem(row, 4, item_monto)
-            self.table.setItem(row, 5, QTableWidgetItem(m.moneda))
-            
-            if m.moneda in totales:
-                if es_ingreso:
-                    totales[m.moneda] += monto_dec
-                else:
-                    totales[m.moneda] -= monto_dec
-            row += 1
+            # Cargar pagos / cobranzas de ventas
+            for pago in pagos:
+                self.table.insertRow(row)
+                self.table.setItem(row, 0, QTableWidgetItem(f"COB-{pago.id}"))
                 
-        # Actualizar labels de consolidado físico
-        self.lbl_pyg.setText(f"{totales['PYG']:,.0f}".replace(",", "."))
-        self.lbl_usd.setText(f"{totales['USD']:,.2f}")
-        self.lbl_brl.setText(f"{totales['BRL']:,.2f}")
-        self.lbl_ars.setText(f"{totales['ARS']:,.2f}")
-        
-        db.close()
+                hora = pago.cob_fecha.strftime("%H:%M:%S") if pago.cob_fecha else "-"
+                self.table.setItem(row, 1, QTableWidgetItem(hora))
+                self.table.setItem(row, 2, QTableWidgetItem(f"VENTA ({pago.cob_metodo})"))
+                self.table.setItem(row, 3, QTableWidgetItem(f"Factura Nº {pago.cob_vennro}"))
+                
+                monto_dec = Decimal(str(pago.cob_monto or '0'))
+                monto_str = f"{monto_dec:,.0f}" if pago.cob_mndori == "PYG" else f"{monto_dec:,.2f}"
+                
+                item_monto = QTableWidgetItem(monto_str)
+                item_monto.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.table.setItem(row, 4, item_monto)
+                self.table.setItem(row, 5, QTableWidgetItem(pago.cob_mndori or 'PYG'))
+                
+                moneda = pago.cob_mndori or 'PYG'
+                if pago.cob_metodo == "Efectivo":
+                    if moneda in totales_efectivo:
+                        totales_efectivo[moneda] += monto_dec
+                else:
+                    if moneda in totales_digitales:
+                        totales_digitales[moneda] += monto_dec
+                row += 1
+
+            # Cargar movimientos de caja (Fondo Inicial / Sangrías de efectivo)
+            for m in movs:
+                self.table.insertRow(row)
+                self.table.setItem(row, 0, QTableWidgetItem(f"MOV-{m.id}"))
+                
+                hora = m.fecha.strftime("%H:%M:%S") if m.fecha else "-"
+                self.table.setItem(row, 1, QTableWidgetItem(hora))
+                
+                es_ingreso = m.tipo in ('FONDO_INICIAL', 'INGRESO')
+                tipo_label = "📥 FONDO/ING." if es_ingreso else "📤 SANGRÍA/RET."
+                item_tipo = QTableWidgetItem(tipo_label)
+                if not es_ingreso:
+                    item_tipo.setForeground(QColor("#c62828"))
+                else:
+                    item_tipo.setForeground(QColor("#2e7d32"))
+                self.table.setItem(row, 2, item_tipo)
+                
+                self.table.setItem(row, 3, QTableWidgetItem(m.concepto or "-"))
+                
+                monto_dec = Decimal(str(m.monto or '0'))
+                signo = "+" if es_ingreso else "-"
+                monto_str = f"{signo}{monto_dec:,.0f}" if m.moneda == "PYG" else f"{signo}{monto_dec:,.2f}"
+                
+                item_monto = QTableWidgetItem(monto_str)
+                item_monto.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if not es_ingreso:
+                    item_monto.setForeground(QColor("#c62828"))
+                else:
+                    item_monto.setForeground(QColor("#2e7d32"))
+                self.table.setItem(row, 4, item_monto)
+                self.table.setItem(row, 5, QTableWidgetItem(m.moneda))
+                
+                if m.moneda in totales_efectivo:
+                    if es_ingreso:
+                        totales_efectivo[m.moneda] += monto_dec
+                    else:
+                        totales_efectivo[m.moneda] -= monto_dec
+                row += 1
+                    
+            # Actualizar labels de consolidado físico real (solo billetes/monedas)
+            self.lbl_pyg.setText(f"{totales_efectivo['PYG']:,.0f}".replace(",", "."))
+            self.lbl_usd.setText(f"{totales_efectivo['USD']:,.2f}")
+            self.lbl_brl.setText(f"{totales_efectivo['BRL']:,.2f}")
+            self.lbl_ars.setText(f"{totales_efectivo['ARS']:,.2f}")
+        finally:
+            db.close()

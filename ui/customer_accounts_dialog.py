@@ -103,8 +103,9 @@ class CustomerAccountsDialog(QDialog):
 
         if cli:
             self.current_client_id = cli.id
+            limite_dec = Decimal(str(cli.cli_limite or 0))
             self.lbl_nombre.setText(f"Cliente: {cli.cli_nombre} ({cli.cli_codigo})")
-            self.lbl_limite.setText(f"Límite de Crédito: ₲ {float(cli.cli_limite):,.0f}")
+            self.lbl_limite.setText(f"Límite de Crédito: ₲ {limite_dec:,.0f}")
             self.load_extracto()
         else:
             self.current_client_id = None
@@ -119,58 +120,58 @@ class CustomerAccountsDialog(QDialog):
             return
         self.table.setRowCount(0)
         db = SessionLocal()
-        
-        # Traer transacciones en orden cronológico
-        trx = (db.query(models.CustomerTransaction)
-                 .filter_by(client_id=self.current_client_id)
-                 .order_by(models.CustomerTransaction.fecha.asc())
-                 .all())
-        
-        saldo_acumulado = 0.0
-        
-        for t in trx:
-            monto = float(t.monto)
-            if t.tipo == 'CHARGE':
-                # Cargo suma a la deuda
-                saldo_acumulado += monto
-                operacion = "📈 Venta a Crédito"
-                color = QColor("#c0392b") # Rojo
-                monto_str = f"+ {monto:,.0f}"
+        try:
+            # Traer transacciones en orden cronológico
+            trx = (db.query(models.CustomerTransaction)
+                     .filter_by(client_id=self.current_client_id)
+                     .order_by(models.CustomerTransaction.fecha.asc())
+                     .all())
+            
+            saldo_acumulado = Decimal("0")
+            
+            for t in trx:
+                monto = Decimal(str(t.monto or 0))
+                if t.tipo == 'CHARGE':
+                    # Cargo suma a la deuda
+                    saldo_acumulado += monto
+                    operacion = "📈 Venta a Crédito"
+                    color = QColor("#c0392b") # Rojo
+                    monto_str = f"+ {monto:,.0f}"
+                else:
+                    # Pago resta a la deuda
+                    saldo_acumulado -= monto
+                    operacion = "💰 Recibo de Pago"
+                    color = QColor("#27ae60") # Verde
+                    monto_str = f"- {monto:,.0f}"
+
+                row = self.table.rowCount()
+                self.table.insertRow(row)
+                
+                self.table.setItem(row, 0, QTableWidgetItem(t.fecha.strftime("%d/%m/%Y %H:%M")))
+                self.table.setItem(row, 1, QTableWidgetItem(operacion))
+                self.table.setItem(row, 2, QTableWidgetItem(t.referencia or ""))
+                
+                i_monto = QTableWidgetItem(monto_str)
+                i_monto.setForeground(color)
+                f = i_monto.font()
+                f.setBold(True)
+                i_monto.setFont(f)
+                self.table.setItem(row, 3, i_monto)
+                
+                self.table.setItem(row, 4, QTableWidgetItem(f"{saldo_acumulado:,.0f}"))
+                
+            self.lbl_saldo.setText(f"SALDO ACTUAL: ₲ {saldo_acumulado:,.0f}")
+            
+            if saldo_acumulado > Decimal("0"):
+                self.lbl_saldo.setStyleSheet("font-size: 16px; font-weight: bold; color: #c0392b;") # Debe
             else:
-                # Pago resta a la deuda
-                saldo_acumulado -= monto
-                operacion = "💰 Recibo de Pago"
-                color = QColor("#27ae60") # Verde
-                monto_str = f"- {monto:,.0f}"
+                self.lbl_saldo.setStyleSheet("font-size: 16px; font-weight: bold; color: #27ae60;") # A favor o cero
 
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            
-            self.table.setItem(row, 0, QTableWidgetItem(t.fecha.strftime("%d/%m/%Y %H:%M")))
-            self.table.setItem(row, 1, QTableWidgetItem(operacion))
-            self.table.setItem(row, 2, QTableWidgetItem(t.referencia or ""))
-            
-            i_monto = QTableWidgetItem(monto_str)
-            i_monto.setForeground(color)
-            f = i_monto.font()
-            f.setBold(True)
-            i_monto.setFont(f)
-            self.table.setItem(row, 3, i_monto)
-            
-            self.table.setItem(row, 4, QTableWidgetItem(f"{saldo_acumulado:,.0f}"))
-            
-        self.lbl_saldo.setText(f"SALDO ACTUAL: ₲ {saldo_acumulado:,.0f}")
-        
-        if saldo_acumulado > 0:
-            self.lbl_saldo.setStyleSheet("font-size: 16px; font-weight: bold; color: #c0392b;") # Debe
-        else:
-            self.lbl_saldo.setStyleSheet("font-size: 16px; font-weight: bold; color: #27ae60;") # A favor o cero
-
-        # Hacer scroll hasta el final
-        if self.table.rowCount() > 0:
-            self.table.scrollToBottom()
-
-        db.close()
+            # Hacer scroll hasta el final
+            if self.table.rowCount() > 0:
+                self.table.scrollToBottom()
+        finally:
+            db.close()
 
     def registrar_pago(self):
         if not self.current_client_id:
@@ -183,23 +184,47 @@ class CustomerAccountsDialog(QDialog):
         )
         if ok and monto_str:
             try:
-                monto = float(monto_str.replace(",", "").replace(".", ""))
-                if monto <= 0:
+                clean_str = monto_str.replace(",", "").replace(".", "").strip()
+                monto = Decimal(clean_str)
+                if monto <= Decimal("0"):
                     raise ValueError
-            except:
+            except Exception:
                 QMessageBox.warning(self, "Error", "Monto inválido.")
                 return
                 
             db = SessionLocal()
-            pago = models.CustomerTransaction(
-                client_id=self.current_client_id,
-                tipo='PAYMENT',
-                monto=monto,
-                referencia="Pago en caja"
-            )
-            db.add(pago)
-            db.commit()
-            db.close()
+            try:
+                pago = models.CustomerTransaction(
+                    client_id=self.current_client_id,
+                    tipo='PAYMENT',
+                    monto=monto,
+                    referencia="Pago en caja"
+                )
+                db.add(pago)
+
+                # Impactar ingreso de efectivo en la sesión de caja abierta para cuadrar Arqueo
+                sesion_abierta = (db.query(models.CashSession)
+                                    .filter_by(status='OPEN')
+                                    .order_by(models.CashSession.id.desc())
+                                    .first())
+                if sesion_abierta:
+                    mov_caja = models.CashMovement(
+                        session_id=sesion_abierta.id,
+                        user_id=sesion_abierta.user_id or 1,
+                        tipo='INGRESO',
+                        moneda='PYG',
+                        monto=monto,
+                        concepto=f"Cobro Cuenta Corriente (Cliente ID #{self.current_client_id})"
+                    )
+                    db.add(mov_caja)
+
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                QMessageBox.critical(self, "Error", f"No se pudo registrar el pago: {e}")
+                return
+            finally:
+                db.close()
             
             QMessageBox.information(self, "Éxito", f"Pago de ₲ {monto:,.0f} registrado correctamente.")
             self.load_extracto()

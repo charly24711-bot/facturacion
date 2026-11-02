@@ -352,13 +352,27 @@ class StockAdjustmentDialog(QDialog):
             )
             db.add(ajuste)
 
-            # 2. Actualizar stock del producto (art_stkini)
+            # 2. Actualizar stock del producto (art_stkini) y registrar en Kardex
             prod = db.query(models.Product).filter_by(
                 art_codigo=self.current_product['codigo']
             ).first()
             if prod:
-                nuevo_stock = Decimal(str(prod.art_stkini or '0')) + delta_stock
+                stock_ant = Decimal(str(prod.art_stkini or '0'))
+                nuevo_stock = stock_ant + delta_stock
                 prod.art_stkini = nuevo_stock
+
+                db.flush()
+                db.add(models.InventoryMovement(
+                    art_codigo=prod.art_codigo,
+                    tipo_movimiento=f"AJUSTE_{tipo_key}",
+                    cantidad=delta_stock,
+                    stock_anterior=stock_ant,
+                    stock_resultante=nuevo_stock,
+                    comprobante=f"Ajuste #{ajuste.id}",
+                    terminal_id='BACKOFFICE',
+                    user_id=self.current_user.get('id'),
+                    observacion=motivo
+                ))
                 
                 # Regla de Negocio: Si es devolución (delta_stock > 0), restituir al lote con vencimiento más lejano
                 if delta_stock > Decimal('0'):

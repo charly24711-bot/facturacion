@@ -1,6 +1,7 @@
-venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 *.db
 *.db-shm
 *.db-wal
@@ -8,4 +9,11 @@ __pycache__/
 *.cdx
 *.fpt
 *.BAK
+*.log
+.vscode/
+.idea/
+venv/
 .env
+dist/
+build/
+*.spec

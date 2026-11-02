@@ -180,7 +180,7 @@ class PriceListsDialog(QDialog):
             self.current_product_cod = prod.art_codigo
             self.lbl_prod.setText(prod.art_descri)
             if not self.txt_precio.text():
-                self.txt_precio.setText(f"{float(prod.art_preven or 0):.0f}")
+                self.txt_precio.setText(f"{Decimal(str(prod.art_preven or 0)):.0f}")
         else:
             self.current_product_cod = None
             self.lbl_prod.setText("— No encontrado —")
@@ -191,25 +191,33 @@ class PriceListsDialog(QDialog):
             return
         try:
             precio = Decimal(parsear_monto(self.txt_precio.text(), "PYG"))
+            if precio <= Decimal("0"):
+                raise ValueError
         except Exception:
             QMessageBox.warning(self, "Error", "Precio inválido.")
             return
 
         db = SessionLocal()
-        item = db.query(models.PriceListItem).filter_by(
-            pli_list_id=self.current_list_id, pli_articu=self.current_product_cod
-        ).first()
-        if item:
-            item.pli_precio = precio
-        else:
-            nuevo = models.PriceListItem(
-                pli_list_id=self.current_list_id,
-                pli_articu=self.current_product_cod,
-                pli_precio=precio
-            )
-            db.add(nuevo)
-        db.commit()
-        db.close()
+        try:
+            item = db.query(models.PriceListItem).filter_by(
+                pli_list_id=self.current_list_id, pli_articu=self.current_product_cod
+            ).first()
+            if item:
+                item.pli_precio = precio
+            else:
+                nuevo = models.PriceListItem(
+                    pli_list_id=self.current_list_id,
+                    pli_articu=self.current_product_cod,
+                    pli_precio=precio
+                )
+                db.add(nuevo)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            QMessageBox.critical(self, "Error", str(e))
+            return
+        finally:
+            db.close()
         
         self.txt_prod.clear()
         self.txt_precio.clear()
@@ -222,25 +230,27 @@ class PriceListsDialog(QDialog):
         if not self.current_list_id:
             return
         db = SessionLocal()
-        items = db.query(models.PriceListItem).filter_by(pli_list_id=self.current_list_id).all()
-        for it in items:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(it.pli_articu))
-            descri = it.product.art_descri if it.product else "Desconocido"
-            self.table.setItem(row, 1, QTableWidgetItem(descri))
-            
-            # Precio en Lista vs Precio Base
-            precio_lista = float(it.pli_precio)
-            precio_base = float(it.product.art_preven or 0) if it.product else 0
-            
-            i_lista = QTableWidgetItem(f"₲ {precio_lista:,.0f}")
-            i_lista.setForeground(QColor("#27ae60"))
-            i_lista.setFont(self._bold_font())
-            self.table.setItem(row, 2, i_lista)
-            
-            self.table.setItem(row, 3, QTableWidgetItem(f"₲ {precio_base:,.0f}"))
-        db.close()
+        try:
+            items = db.query(models.PriceListItem).filter_by(pli_list_id=self.current_list_id).all()
+            for it in items:
+                row = self.table.rowCount()
+                self.table.insertRow(row)
+                self.table.setItem(row, 0, QTableWidgetItem(it.pli_articu))
+                descri = it.product.art_descri if it.product else "Desconocido"
+                self.table.setItem(row, 1, QTableWidgetItem(descri))
+                
+                # Precio en Lista vs Precio Base (estricto Decimal)
+                precio_lista = Decimal(str(it.pli_precio or 0))
+                precio_base = Decimal(str(it.product.art_preven or 0)) if it.product else Decimal("0")
+                
+                i_lista = QTableWidgetItem(f"₲ {precio_lista:,.0f}")
+                i_lista.setForeground(QColor("#27ae60"))
+                i_lista.setFont(self._bold_font())
+                self.table.setItem(row, 2, i_lista)
+                
+                self.table.setItem(row, 3, QTableWidgetItem(f"₲ {precio_base:,.0f}"))
+        finally:
+            db.close()
 
     def _bold_font(self):
         f = self.table.font()

@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
-from database import SessionLocal
+from database import SessionLocal, format_stock_qty
 import models
 
 
@@ -116,7 +116,7 @@ class BatchesDialog(QDialog):
             i_venc = QTableWidgetItem(venc_str)
             self.table.setItem(row, 3, i_venc)
             
-            i_stock = QTableWidgetItem(f"{float(b.stock_actual):g}")
+            i_stock = QTableWidgetItem(format_stock_qty(b.stock_actual))
             i_stock.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 4, i_stock)
             

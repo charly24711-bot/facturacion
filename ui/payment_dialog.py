@@ -7,7 +7,7 @@ from database import SessionLocal
 import models
 from utils.formatting import aplicar_formato_moneda, parsear_monto
 from utils.pos_driver import POSTerminalWorker, POSTerminalSimulator
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 import math
 
 import sys
@@ -23,7 +23,7 @@ class PaymentDialog(QDialog):
         self.setWindowTitle("Cobro Split Multimoneda y Facturación [F11]")
         self.resize(780, 720)
         
-        self.total_adeudado_pyg = Decimal(str(totals.get('PYG', 0.0)))
+        self.total_adeudado_pyg = Decimal(str(totals.get('PYG', '0')))
         self.payment_successful = False
         self.payments_list = []
         self.terminal_payments_meta = {}
@@ -229,20 +229,88 @@ class PaymentDialog(QDialog):
 
     # format_monto removido en favor de utils.formatting.aplicar_formato_moneda
 
+    def _calcular_deuda_cliente(self, client_id: int) -> Decimal:
+        db = SessionLocal()
+        try:
+            trxs = db.query(models.CustomerTransaction).filter_by(client_id=client_id).all()
+            saldo = Decimal("0")
+            for t in trxs:
+                m = Decimal(str(t.monto or 0))
+                if t.tipo == 'CHARGE':
+                    saldo += m
+                else:
+                    saldo -= m
+            return saldo
+        finally:
+            db.close()
+
     def agregar_pago(self):
         try:
             moneda = self.combo_moneda.currentText()
             monto_str = parsear_monto(self.txt_monto.text(), moneda)
-            if not monto_str or monto_str == "0": return
+            if not monto_str or monto_str == "0":
+                return
             
             monto_origen = Decimal(monto_str)
-            if monto_origen <= 0: return
+            if monto_origen <= Decimal("0"):
+                return
             
             moneda = self.combo_moneda.currentText()
             metodo = self.combo_metodo.currentText()
             tasa_compra = self.tasas.get(moneda, {}).get('buy', Decimal("1.0"))
             
-            monto_pyg = (monto_origen * tasa_compra).quantize(Decimal("1"))
+            monto_pyg = (monto_origen * tasa_compra).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+            # Calcular recibido y faltante actual
+            ya_recibido_pyg = Decimal("0")
+            ya_cc_pyg = Decimal("0")
+            for r in range(self.table_pagos.rowCount()):
+                it_pyg = self.table_pagos.item(r, 4)
+                it_met = self.table_pagos.item(r, 1)
+                if it_pyg:
+                    val_r = Decimal(it_pyg.text().replace(',', ''))
+                    ya_recibido_pyg += val_r
+                    if it_met and it_met.text() == "Cuenta Corriente":
+                        ya_cc_pyg += val_r
+            faltante_actual = max(Decimal("0"), self.total_adeudado_pyg - ya_recibido_pyg)
+
+            # Validaciones estrictas para Cuenta Corriente
+            if metodo == "Cuenta Corriente":
+                self.resolver_cliente_final()
+                if not self.selected_client or self.selected_client.cli_codigo == "000001":
+                    QMessageBox.warning(
+                        self,
+                        "Cuenta Corriente Restringida",
+                        "No se puede otorgar crédito en Cuenta Corriente a 'CONSUMIDOR FINAL'.\n"
+                        "Seleccione un cliente nominal registrado con línea de crédito."
+                    )
+                    return
+
+                if monto_pyg > faltante_actual:
+                    QMessageBox.warning(
+                        self,
+                        "Operación No Permitida",
+                        f"El cargo a Cuenta Corriente (Gs. {monto_pyg:,.0f}) no puede superar el saldo pendiente "
+                        f"de la factura (Gs. {faltante_actual:,.0f}).\n"
+                        "No se permite generar vuelto en efectivo a partir de Cuenta Corriente."
+                    )
+                    return
+
+                limite_cli = Decimal(str(self.selected_client.cli_limite or 0))
+                deuda_actual = self._calcular_deuda_cliente(self.selected_client.id)
+                nueva_deuda_total = deuda_actual + ya_cc_pyg + monto_pyg
+                if limite_cli <= Decimal("0") or nueva_deuda_total > limite_cli:
+                    disponible = max(Decimal("0"), limite_cli - deuda_actual - ya_cc_pyg)
+                    QMessageBox.warning(
+                        self,
+                        "Límite de Crédito Excedido",
+                        f"El cliente '{self.selected_client.cli_nombre}' supera su límite de crédito autorizado.\n\n"
+                        f"• Límite Autorizado: Gs. {limite_cli:,.0f}\n"
+                        f"• Deuda Actual: Gs. {(deuda_actual + ya_cc_pyg):,.0f}\n"
+                        f"• Crédito Disponible: Gs. {disponible:,.0f}\n"
+                        f"• Monto Solicitado: Gs. {monto_pyg:,.0f}"
+                    )
+                    return
             
             row = self.table_pagos.rowCount()
             self.table_pagos.insertRow(row)
@@ -260,7 +328,7 @@ class PaymentDialog(QDialog):
             else:
                 self.txt_monto.setFocus()
             
-        except Exception as e:
+        except Exception:
             QMessageBox.warning(self, "Error", "Monto inválido.")
             
     def eliminar_pago(self):
@@ -300,8 +368,8 @@ class PaymentDialog(QDialog):
                 vuelto_final = vuelto_pyg
                 self.lbl_vuelto_final.setText(f"Gs. {vuelto_final:,.0f}")
             else:
-                # Redondeo hacia abajo a 2 decimales para evitar pérdidas
-                vuelto_final = math.floor((vuelto_pyg / tasa_venta) * 100) / 100.0
+                # Redondeo hacia abajo a 2 decimales con Decimal estricto
+                vuelto_final = (vuelto_pyg / tasa_venta).quantize(Decimal("0.01"), rounding=ROUND_FLOOR)
                 self.lbl_vuelto_final.setText(f"{vuelto_final:,.2f} {moneda_vuelto}")
 
     def inicializar_datos_cliente(self):
@@ -510,25 +578,55 @@ class PaymentDialog(QDialog):
         QMessageBox.warning(self, "Operación POS No Concretada", error_msg)
 
     def procesar_cobro(self):
-        self.payments_list = []
+        raw_payments = []
+        total_recibido_pyg = Decimal("0")
         for row in range(self.table_pagos.rowCount()):
             moneda = self.table_pagos.item(row, 0).text()
             metodo = self.table_pagos.item(row, 1).text()
             monto_origen = Decimal(self.table_pagos.item(row, 2).text().replace(',', ''))
+            tasa_compra = Decimal(self.table_pagos.item(row, 3).text().replace(',', ''))
             monto_pyg = Decimal(self.table_pagos.item(row, 4).text().replace(',', ''))
-            
+            total_recibido_pyg += monto_pyg
             meta = self.terminal_payments_meta.get(row, {})
-            
-            self.payments_list.append({
+            raw_payments.append({
                 'moneda': moneda,
                 'metodo': metodo,
                 'monto_origen': monto_origen,
+                'tasa_compra': tasa_compra,
                 'monto_pyg': monto_pyg,
                 'auth_code': meta.get('auth_code'),
                 'voucher_nro': meta.get('voucher_nro'),
                 'card_brand': meta.get('card_brand'),
                 'terminal_id': meta.get('terminal_id')
             })
+
+        # Descontar el vuelto del pago en Efectivo para ingreso neto real
+        vuelto_restante_pyg = max(Decimal("0"), total_recibido_pyg - self.total_adeudado_pyg)
+        self.payments_list = []
+        for p in raw_payments:
+            net_pyg = p['monto_pyg']
+            net_origen = p['monto_origen']
+            if vuelto_restante_pyg > Decimal("0") and p['metodo'] == "Efectivo":
+                descuento_pyg = min(net_pyg, vuelto_restante_pyg)
+                net_pyg -= descuento_pyg
+                vuelto_restante_pyg -= descuento_pyg
+                if p['moneda'] == "PYG":
+                    net_origen = net_pyg
+                else:
+                    tasa = p['tasa_compra'] if p['tasa_compra'] > Decimal("0") else Decimal("1")
+                    net_origen = (net_pyg / tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+            if net_pyg > Decimal("0") or len(raw_payments) == 1:
+                self.payments_list.append({
+                    'moneda': p['moneda'],
+                    'metodo': p['metodo'],
+                    'monto_origen': net_origen,
+                    'monto_pyg': net_pyg,
+                    'auth_code': p.get('auth_code'),
+                    'voucher_nro': p.get('voucher_nro'),
+                    'card_brand': p.get('card_brand'),
+                    'terminal_id': p.get('terminal_id')
+                })
             
         self.resolver_cliente_final()
         

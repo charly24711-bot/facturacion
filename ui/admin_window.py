@@ -468,6 +468,14 @@ class AdminWindow(QMainWindow):
     # ─── FASE 2: Módulos Nuevos ──────────────────────────────────────────────
     def abrir_usuarios(self):
         """Gestión de Usuarios y Cajeros [F2]"""
+        if self.current_user.get('role') != 'ADMIN':
+            QMessageBox.warning(
+                self,
+                "Acceso Restringido (RBAC)",
+                f"El rol '{self.current_user.get('role')}' no tiene permisos para acceder a la Gestión de Usuarios.\n"
+                "Esta operación es exclusiva del rol ADMIN."
+            )
+            return
         from ui.users_management_dialog import UsersManagementDialog
         dlg = UsersManagementDialog(current_user=self.current_user, parent=self)
         dlg.exec()
@@ -536,8 +544,11 @@ class AdminWindow(QMainWindow):
                         elif iva_pct == 5:
                             total_iva_recaudado += (sub / Decimal('21'))
                             
-            # 2. Stock crítico (menor o igual a 0)
-            productos_criticos = db.query(models.Product).filter(models.Product.art_stkini <= 0).count()
+            # 2. Stock crítico (menor o igual a 0 o bajo punto de reorden art_stkmin)
+            productos_criticos = db.query(models.Product).filter(
+                (models.Product.art_stkini <= 0) |
+                (models.Product.art_stkini <= func.coalesce(models.Product.art_stkmin, 0))
+            ).count()
             
             # 3. Lotes próximos a vencer (en los próximos 7 días)
             limite_vencimiento = today_start + datetime.timedelta(days=7)

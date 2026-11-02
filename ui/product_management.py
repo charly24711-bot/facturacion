@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, 
                              QTableWidgetItem, QLineEdit, QPushButton, QFormLayout, 
                              QHeaderView, QMessageBox, QGroupBox, QSplitter, 
-                             QTabWidget, QWidget, QComboBox, QCheckBox, QApplication)
+                             QTabWidget, QWidget, QComboBox, QCheckBox, QLabel, QApplication)
 from PyQt6.QtCore import Qt
 from database import SessionLocal, format_stock_qty, format_iva_rate
 import models
@@ -139,6 +139,45 @@ class ProductManagementDialog(QDialog):
         self.table_batches.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         batch_layout.addWidget(self.table_batches)
         self.tabs.addTab(tab_batches, "Lotes / Vencimientos")
+
+        # TAB 4: Componentes de Combo / Kit (Explosión de Insumos)
+        tab_combo = QWidget()
+        combo_layout = QVBoxLayout(tab_combo)
+        lbl_combo_help = QLabel(
+            "Si este artículo es un Combo o Kit promocional, agregue aquí sus insumos constitutivos.\n"
+            "Al vender el combo en caja, el sistema descontará automáticamente cada insumo y su lote FEFO."
+        )
+        lbl_combo_help.setStyleSheet("color: #37474f; font-size: 11px;")
+        lbl_combo_help.setWordWrap(True)
+        combo_layout.addWidget(lbl_combo_help)
+
+        comp_add_row = QHBoxLayout()
+        self.txt_comp_codigo = QLineEdit()
+        self.txt_comp_codigo.setPlaceholderText("Código de insumo (Ej: 000014)")
+        self.txt_comp_cant = QLineEdit("1")
+        self.txt_comp_cant.setFixedWidth(80)
+        self.txt_comp_cant.setPlaceholderText("Cant.")
+        btn_add_comp = QPushButton("➕ Agregar Insumo")
+        btn_add_comp.clicked.connect(self.agregar_componente_combo)
+        btn_del_comp = QPushButton("🗑️ Quitar Seleccionado")
+        btn_del_comp.clicked.connect(self.quitar_componente_combo)
+
+        comp_add_row.addWidget(QLabel("Insumo:"))
+        comp_add_row.addWidget(self.txt_comp_codigo, stretch=1)
+        comp_add_row.addWidget(QLabel("Cant. por Combo:"))
+        comp_add_row.addWidget(self.txt_comp_cant)
+        comp_add_row.addWidget(btn_add_comp)
+        comp_add_row.addWidget(btn_del_comp)
+        combo_layout.addLayout(comp_add_row)
+
+        self.table_components = QTableWidget(0, 4)
+        self.table_components.setHorizontalHeaderLabels(["Cód. Insumo", "Descripción", "Cant. por Combo", "Stock Actual Insumo"])
+        self.table_components.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table_components.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table_components.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        combo_layout.addWidget(self.table_components)
+
+        self.tabs.addTab(tab_combo, "🎁 Combo / Kit (Insumos)")
         
         right_layout.addWidget(self.tabs)
         
@@ -244,7 +283,9 @@ class ProductManagementDialog(QDialog):
             self.chk_active.setChecked(prod.is_active)
             self.txt_location.setText(prod.location or "")
             
-            self.txt_codigo.setReadOnly(True) 
+            self.txt_codigo.setReadOnly(True)
+            self.txt_stkini.setReadOnly(True)
+            self.txt_stkini.setToolTip("El stock actual es de solo lectura. Use Compras o Ajustes de Inventario para modificarlo.")
             
             from database import resolve_image_path
             img_resolved = resolve_image_path(prod.image_path, prod.art_codigo)
@@ -266,7 +307,7 @@ class ProductManagementDialog(QDialog):
             for r, bc in enumerate(prod.barcodes):
                 self.table_barcodes.insertRow(r)
                 self.table_barcodes.setItem(r, 0, QTableWidgetItem(bc.barcode))
-                self.table_barcodes.setItem(r, 1, QTableWidgetItem(f"{float(bc.factor_conversion or 0):g}"))
+                self.table_barcodes.setItem(r, 1, QTableWidgetItem(format_stock_qty(bc.factor_conversion or 0)))
                 
             # Cargar Lotes
             self.table_batches.setRowCount(0)
@@ -275,7 +316,19 @@ class ProductManagementDialog(QDialog):
                 self.table_batches.setItem(r, 0, QTableWidgetItem(bt.lote))
                 venc = bt.fecha_vencimiento.strftime("%d/%m/%Y") if bt.fecha_vencimiento else "Sin fecha"
                 self.table_batches.setItem(r, 1, QTableWidgetItem(venc))
-                self.table_batches.setItem(r, 2, QTableWidgetItem(f"{float(bt.stock_actual or 0):g}"))
+                self.table_batches.setItem(r, 2, QTableWidgetItem(format_stock_qty(bt.stock_actual or 0)))
+
+            # Cargar Componentes de Combo / Kit
+            self.table_components.setRowCount(0)
+            for r, comp in enumerate(prod.components):
+                self.table_components.insertRow(r)
+                insumo = comp.component_product
+                descri_ins = insumo.art_descri if insumo else "Desconocido"
+                stk_ins = format_stock_qty(insumo.art_stkini) if insumo else "0"
+                self.table_components.setItem(r, 0, QTableWidgetItem(comp.component_art_codigo))
+                self.table_components.setItem(r, 1, QTableWidgetItem(descri_ins))
+                self.table_components.setItem(r, 2, QTableWidgetItem(format_stock_qty(comp.cantidad)))
+                self.table_components.setItem(r, 3, QTableWidgetItem(stk_ins))
                 
         db.close()
         
@@ -286,6 +339,8 @@ class ProductManagementDialog(QDialog):
         self.lbl_product_photo.setText("Sin Foto")
         
         self.txt_codigo.setReadOnly(False)
+        self.txt_stkini.setReadOnly(False)
+        self.txt_stkini.setToolTip("")
         
         # Sugerir automáticamente el siguiente código correlativo de 6 dígitos
         db = SessionLocal()
@@ -311,6 +366,7 @@ class ProductManagementDialog(QDialog):
         self.chk_active.setChecked(True)
         self.table_barcodes.setRowCount(0)
         self.table_batches.setRowCount(0)
+        self.table_components.setRowCount(0)
         
         self.tabs.setCurrentIndex(0)
         self.txt_descri.setFocus()
@@ -330,11 +386,31 @@ class ProductManagementDialog(QDialog):
             
         db = SessionLocal()
         try:
+            cbarra = self.txt_cbarra.text().strip()
+            if cbarra:
+                # Validar unicidad de código de barras en products y product_barcodes
+                dup_prod = db.query(models.Product).filter(
+                    models.Product.art_cbarra == cbarra,
+                    models.Product.id != (self.current_product_id or -1)
+                ).first()
+                dup_bc = db.query(models.ProductBarcode).filter(
+                    models.ProductBarcode.barcode == cbarra,
+                    models.ProductBarcode.product_id != (self.current_product_id or -1)
+                ).first()
+                if dup_prod or dup_bc:
+                    QMessageBox.warning(
+                        self, "Código de Barras Duplicado",
+                        f"El código de barras '{cbarra}' ya está asignado a otro producto."
+                    )
+                    return
+
+            is_new = False
             if self.current_product_id:
                 prod = db.query(models.Product).filter_by(id=self.current_product_id).first()
                 if not prod:
                     raise Exception("No se encontró el producto.")
             else:
+                is_new = True
                 existente = db.query(models.Product).filter_by(art_codigo=codigo).first()
                 if existente:
                     QMessageBox.warning(self, "Error", "El código de producto ya existe.")
@@ -343,12 +419,24 @@ class ProductManagementDialog(QDialog):
                 prod.art_codigo = codigo
                 db.add(prod)
                 
-            prod.art_cbarra = self.txt_cbarra.text()
+            prod.art_cbarra = cbarra
             prod.art_descri = descri
             prod.art_costo = Decimal(parsear_monto(self.txt_costo.text(), "PYG"))
             prod.art_preven = Decimal(parsear_monto(self.txt_preven.text(), "PYG"))
             prod.art_impu = Decimal(str(self.combo_impu.currentData() or 10))
-            prod.art_stkini = Decimal(str(self.txt_stkini.text()).replace(',', '') or 0)
+            if is_new:
+                stk_ini = Decimal(str(self.txt_stkini.text()).replace(',', '') or 0)
+                prod.art_stkini = stk_ini
+                if stk_ini != Decimal('0'):
+                    db.add(models.InventoryMovement(
+                        art_codigo=codigo,
+                        tipo_movimiento='STOCK_INICIAL',
+                        cantidad=stk_ini,
+                        stock_anterior=Decimal('0'),
+                        stock_resultante=stk_ini,
+                        comprobante=f"Alta #{codigo}",
+                        observacion="Carga de stock inicial en alta de artículo"
+                    ))
             prod.art_stkmin = Decimal(str(self.txt_stkmin.text()).replace(',', '') or 10)
             prod.art_stkmax = Decimal(str(self.txt_stkmax.text()).replace(',', '') or 200)
             
@@ -361,6 +449,19 @@ class ProductManagementDialog(QDialog):
             
             if hasattr(self, 'current_image_path') and self.current_image_path:
                 prod.image_path = self.current_image_path
+
+            db.flush()
+            # Sincronizar componentes del Combo / Kit en base a la grilla table_components
+            db.query(models.ProductComponent).filter_by(parent_product_id=prod.id).delete()
+            for r in range(self.table_components.rowCount()):
+                cod_ins = self.table_components.item(r, 0).text().strip()
+                cant_ins = Decimal(str(self.table_components.item(r, 2).text()).replace(',', '.') or '1')
+                if cod_ins and cod_ins != prod.art_codigo and cant_ins > Decimal('0'):
+                    db.add(models.ProductComponent(
+                        parent_product_id=prod.id,
+                        component_art_codigo=cod_ins,
+                        cantidad=cant_ins
+                    ))
             
             db.commit()
             QMessageBox.information(self, "Éxito", "Artículo guardado correctamente.")
@@ -389,6 +490,59 @@ class ProductManagementDialog(QDialog):
                 from PyQt6.QtGui import QPixmap
                 pixmap = QPixmap(self.current_image_path)
                 self.lbl_product_photo.setPixmap(pixmap.scaled(self.lbl_product_photo.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+    def agregar_componente_combo(self):
+        cod_ins = self.txt_comp_codigo.text().strip()
+        if " - " in cod_ins:
+            cod_ins = cod_ins.split(" - ")[0].strip()
+        if cod_ins.isdigit() and len(cod_ins) < 6:
+            cod_ins = cod_ins.zfill(6)
+
+        codigo_padre = self.txt_codigo.text().strip()
+        if not cod_ins:
+            return
+        if cod_ins == codigo_padre:
+            QMessageBox.warning(self, "Error", "Un artículo no puede ser componente de sí mismo.")
+            return
+
+        try:
+            cant_ins = Decimal(self.txt_comp_cant.text().replace(',', '.').strip() or '0')
+            if cant_ins <= Decimal('0'):
+                raise ValueError()
+        except Exception:
+            QMessageBox.warning(self, "Error", "Ingrese una cantidad válida mayor a cero para el insumo.")
+            return
+
+        db = SessionLocal()
+        try:
+            insumo = db.query(models.Product).filter_by(art_codigo=cod_ins).first()
+            if not insumo:
+                QMessageBox.warning(self, "No encontrado", f"No existe el artículo con código '{cod_ins}'.")
+                return
+
+            # Si ya está en la tabla, actualizar cantidad
+            for r in range(self.table_components.rowCount()):
+                if self.table_components.item(r, 0).text() == cod_ins:
+                    self.table_components.setItem(r, 2, QTableWidgetItem(format_stock_qty(cant_ins)))
+                    self.txt_comp_codigo.clear()
+                    self.txt_comp_cant.setText("1")
+                    return
+
+            row = self.table_components.rowCount()
+            self.table_components.insertRow(row)
+            self.table_components.setItem(row, 0, QTableWidgetItem(insumo.art_codigo))
+            self.table_components.setItem(row, 1, QTableWidgetItem(insumo.art_descri))
+            self.table_components.setItem(row, 2, QTableWidgetItem(format_stock_qty(cant_ins)))
+            self.table_components.setItem(row, 3, QTableWidgetItem(format_stock_qty(insumo.art_stkini)))
+            self.txt_comp_codigo.clear()
+            self.txt_comp_cant.setText("1")
+        finally:
+            db.close()
+
+    def quitar_componente_combo(self):
+        row = self.table_components.currentRow()
+        if row >= 0:
+            self.table_components.removeRow(row)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

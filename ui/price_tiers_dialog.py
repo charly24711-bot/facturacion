@@ -133,11 +133,12 @@ class PriceTiersDialog(QDialog):
         ).first()
         if prod:
             self.current_product_cod = prod.art_codigo
+            precio_base = Decimal(str(prod.art_preven or 0))
             self.lbl_prod.setText(
-                f"{prod.art_descri}  |  Precio normal: ₲ {float(prod.art_preven or 0):,.0f}"
+                f"{prod.art_descri}  |  Precio normal: ₲ {precio_base:,.0f}"
             )
             if not self.txt_precio.text():
-                self.txt_precio.setText(f"{float(prod.art_preven or 0):.0f}")
+                self.txt_precio.setText(f"{precio_base:.0f}")
             self.load_tiers()
         else:
             self.current_product_cod = None
@@ -150,22 +151,25 @@ class PriceTiersDialog(QDialog):
             return
         self.table.setRowCount(0)
         db = SessionLocal()
-        tiers = (db.query(models.PriceTier)
-                   .filter_by(pt_articu=self.current_product_cod)
-                   .order_by(models.PriceTier.pt_qty_min)
-                   .all())
-        for t in tiers:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(f"{t.pt_qty_min}+"))
-            self.table.setItem(row, 1, QTableWidgetItem(f"₲ {float(t.pt_precio):,.0f}"))
-            self.table.setItem(row, 2, QTableWidgetItem(t.pt_descri or ""))
-            activo_item = QTableWidgetItem("✅ Activo" if t.is_active else "⏸️ Inactivo")
-            activo_item.setForeground(QColor("#27ae60") if t.is_active else QColor("#e74c3c"))
-            # Store ID in column 3
-            activo_item.setData(Qt.ItemDataRole.UserRole, t.id)
-            self.table.setItem(row, 3, activo_item)
-        db.close()
+        try:
+            tiers = (db.query(models.PriceTier)
+                       .filter_by(pt_articu=self.current_product_cod)
+                       .order_by(models.PriceTier.pt_qty_min)
+                       .all())
+            for t in tiers:
+                row = self.table.rowCount()
+                self.table.insertRow(row)
+                self.table.setItem(row, 0, QTableWidgetItem(f"{t.pt_qty_min}+"))
+                pt_precio_dec = Decimal(str(t.pt_precio or 0))
+                self.table.setItem(row, 1, QTableWidgetItem(f"₲ {pt_precio_dec:,.0f}"))
+                self.table.setItem(row, 2, QTableWidgetItem(t.pt_descri or ""))
+                activo_item = QTableWidgetItem("✅ Activo" if t.is_active else "⏸️ Inactivo")
+                activo_item.setForeground(QColor("#27ae60") if t.is_active else QColor("#e74c3c"))
+                # Store ID in column 3
+                activo_item.setData(Qt.ItemDataRole.UserRole, t.id)
+                self.table.setItem(row, 3, activo_item)
+        finally:
+            db.close()
 
     def agregar_tier(self):
         if not self.current_product_cod:
@@ -173,29 +177,36 @@ class PriceTiersDialog(QDialog):
             return
         try:
             precio = Decimal(parsear_monto(self.txt_precio.text(), "PYG"))
+            if precio <= Decimal("0"):
+                raise ValueError
         except Exception:
             QMessageBox.warning(self, "Error", "Precio inválido.")
             return
         qty_min = self.spin_qty.value()
         db = SessionLocal()
-        # Check if tier for this qty already exists
-        exist = db.query(models.PriceTier).filter_by(
-            pt_articu=self.current_product_cod, pt_qty_min=qty_min
-        ).first()
-        if exist:
-            QMessageBox.warning(self, "Error", f"Ya existe una escala para {qty_min}+ unidades.")
-            db.close()
+        try:
+            # Check if tier for this qty already exists
+            exist = db.query(models.PriceTier).filter_by(
+                pt_articu=self.current_product_cod, pt_qty_min=qty_min
+            ).first()
+            if exist:
+                QMessageBox.warning(self, "Error", f"Ya existe una escala para {qty_min}+ unidades.")
+                return
+            tier = models.PriceTier(
+                pt_articu=self.current_product_cod,
+                pt_qty_min=qty_min,
+                pt_precio=precio,
+                pt_descri=self.txt_descri.text().strip() or f"Precio {qty_min}+",
+                is_active=True
+            )
+            db.add(tier)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            QMessageBox.critical(self, "Error", str(e))
             return
-        tier = models.PriceTier(
-            pt_articu=self.current_product_cod,
-            pt_qty_min=qty_min,
-            pt_precio=float(precio),
-            pt_descri=self.txt_descri.text().strip() or f"Precio {qty_min}+",
-            is_active=True
-        )
-        db.add(tier)
-        db.commit()
-        db.close()
+        finally:
+            db.close()
         self.txt_precio.clear()
         self.txt_descri.clear()
         self.load_tiers()

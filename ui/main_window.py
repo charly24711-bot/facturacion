@@ -117,6 +117,7 @@ class MainWindow(QMainWindow):
         toolbar_layout.setContentsMargins(10, 6, 10, 6)
         toolbar_layout.setSpacing(15)
 
+
         # 1. Info Red & Sincronización
         self.sync_status_widget = SyncStatusWidget()
         self.lbl_network_status = self.sync_status_widget.lbl_status
@@ -149,8 +150,10 @@ class MainWindow(QMainWindow):
         toolbar_layout.addStretch()
 
         # 3. Botones de Acción
+        is_supervisor = self.current_user.get('role') in ('ADMIN', 'GERENTE')
         btn_articulo = QPushButton("📦 Artículos")
         btn_articulo.clicked.connect(self.open_product_management)
+        btn_articulo.setVisible(is_supervisor)
         toolbar_layout.addWidget(btn_articulo)
 
         btn_caja = QPushButton("💵 Caja")
@@ -819,33 +822,111 @@ class MainWindow(QMainWindow):
                 )
                 db.add(item)
                 
-                # Descontar stock general ATÓMICAMENTE (Previene Race Conditions)
+                # Descontar stock general ATÓMICAMENTE o explotar componentes si es un Combo/Kit
                 producto = db.query(models.Product).filter_by(art_codigo=cod_art).first()
                 if producto:
-                    db.query(models.Product).filter_by(id=producto.id).update({
-                        "art_stkini": models.Product.art_stkini - cantidad
-                    })
-                    db.commit() # Flush para aplicar el UPDATE atómico al DB
-                    db.refresh(producto) # Recargar el valor para UI o logs si es necesario
-                    
-                    # FIFO Descontar stock de lotes (Atómico a nivel de celda)
-                    qty_to_deduct = cantidad
-                    batches = (db.query(models.ProductBatch)
-                                 .filter(models.ProductBatch.product_id == producto.id, 
-                                         models.ProductBatch.stock_actual > 0)
-                                 .order_by(models.ProductBatch.fecha_vencimiento.asc())
-                                 .all())
-                    
-                    for b in batches:
-                        if qty_to_deduct <= Decimal('0'):
-                            break
-                        available = _safe_dec(b.stock_actual)
-                        deduccion = min(available, qty_to_deduct)
-                        
-                        db.query(models.ProductBatch).filter_by(id=b.id).update({
-                            "stock_actual": models.ProductBatch.stock_actual - deduccion
+                    user_id_actual = self.current_user.get('id') if getattr(self, 'current_user', None) else 1
+                    import datetime as dt
+                    now_dt = dt.datetime.now()
+
+                    componentes = db.query(models.ProductComponent).filter_by(parent_product_id=producto.id).all()
+                    if componentes:
+                        # EXPLOSIÓN DE COMBO/KIT: no descuenta ítem fantasma, rebaja cada insumo constitutivo
+                        for comp in componentes:
+                            insumo = db.query(models.Product).filter_by(art_codigo=comp.component_art_codigo).first()
+                            if not insumo:
+                                continue
+                            cant_insumo = (_safe_dec(comp.cantidad) * cantidad).quantize(Decimal('0.001'))
+                            stock_prev_ins = _safe_dec(insumo.art_stkini or 0)
+                            db.query(models.Product).filter_by(id=insumo.id).update({
+                                "art_stkini": models.Product.art_stkini - cant_insumo
+                            })
+                            db.commit()
+                            db.refresh(insumo)
+                            stock_post_ins = _safe_dec(insumo.art_stkini or 0)
+
+                            obs_ins = f"Explosión Combo [{cod_art}] ({cantidad} x {comp.cantidad})"
+                            if stock_post_ins < Decimal('0'):
+                                obs_ins += f" | ALERTA NEGATIVO ({stock_prev_ins} -> {stock_post_ins})"
+
+                            db.add(models.InventoryMovement(
+                                art_codigo=insumo.art_codigo,
+                                tipo_movimiento='VENTA_COMBO',
+                                cantidad=-cant_insumo,
+                                stock_anterior=stock_prev_ins,
+                                stock_resultante=stock_post_ins,
+                                comprobante=f"Factura #{nueva_venta.ven_numero}",
+                                terminal_id=f"SESION-{self.session_id or 1}",
+                                user_id=user_id_actual,
+                                observacion=obs_ins
+                            ))
+
+                            # Descuento FEFO en los lotes del insumo
+                            qty_to_deduct = cant_insumo
+                            batches_ins = (db.query(models.ProductBatch)
+                                             .filter(models.ProductBatch.product_id == insumo.id,
+                                                     models.ProductBatch.stock_actual > 0)
+                                             .order_by(
+                                                 (models.ProductBatch.fecha_vencimiento < now_dt).asc(),
+                                                 models.ProductBatch.fecha_vencimiento.asc()
+                                             )
+                                             .all())
+                            for b in batches_ins:
+                                if qty_to_deduct <= Decimal('0'):
+                                    break
+                                available = _safe_dec(b.stock_actual)
+                                deduccion = min(available, qty_to_deduct)
+                                db.query(models.ProductBatch).filter_by(id=b.id).update({
+                                    "stock_actual": models.ProductBatch.stock_actual - deduccion
+                                })
+                                qty_to_deduct -= deduccion
+                    else:
+                        stock_previo = _safe_dec(producto.art_stkini or 0)
+                        db.query(models.Product).filter_by(id=producto.id).update({
+                            "art_stkini": models.Product.art_stkini - cantidad
                         })
-                        qty_to_deduct -= deduccion
+                        db.commit() # Flush para aplicar el UPDATE atómico al DB
+                        db.refresh(producto) # Recargar el valor para UI o logs si es necesario
+                        stock_post = _safe_dec(producto.art_stkini or 0)
+                        
+                        # Registrar movimiento en Kardex inmutable (InventoryMovement)
+                        obs_kardex = "Venta normal en POS"
+                        if stock_post < Decimal('0'):
+                            obs_kardex = f"ALERTA AUDITORÍA: Venta autorizada con saldo negativo ({stock_previo} -> {stock_post})"
+                        kardex_mov = models.InventoryMovement(
+                            art_codigo=cod_art,
+                            tipo_movimiento='VENTA',
+                            cantidad=-cantidad,
+                            stock_anterior=stock_previo,
+                            stock_resultante=stock_post,
+                            comprobante=f"Factura #{nueva_venta.ven_numero}",
+                            terminal_id=f"SESION-{self.session_id or 1}",
+                            user_id=user_id_actual,
+                            observacion=obs_kardex
+                        )
+                        db.add(kardex_mov)
+                        
+                        # FEFO Descontar stock de lotes vigentes primero (y de vencidos solo en última instancia)
+                        qty_to_deduct = cantidad
+                        batches = (db.query(models.ProductBatch)
+                                     .filter(models.ProductBatch.product_id == producto.id, 
+                                             models.ProductBatch.stock_actual > 0)
+                                     .order_by(
+                                         (models.ProductBatch.fecha_vencimiento < now_dt).asc(),
+                                         models.ProductBatch.fecha_vencimiento.asc()
+                                     )
+                                     .all())
+                        
+                        for b in batches:
+                            if qty_to_deduct <= Decimal('0'):
+                                break
+                            available = _safe_dec(b.stock_actual)
+                            deduccion = min(available, qty_to_deduct)
+                            
+                            db.query(models.ProductBatch).filter_by(id=b.id).update({
+                                "stock_actual": models.ProductBatch.stock_actual - deduccion
+                            })
+                            qty_to_deduct -= deduccion
             
             # 3. Registrar Cobranza
             for p in payments_list:
@@ -940,6 +1021,19 @@ class MainWindow(QMainWindow):
         self.table_historial.setSortingEnabled(True)
         db.close()
         
+    def ver_detalle_factura(self, item=None):
+        row = item.row() if item is not None else self.table_historial.currentRow()
+        if row < 0:
+            return
+        item_0 = self.table_historial.item(row, 0)
+        if not item_0:
+            return
+        invoice_id = item_0.data(Qt.ItemDataRole.UserRole) or item_0.data(Qt.ItemDataRole.DisplayRole)
+        if invoice_id:
+            from ui.invoice_detail_dialog import InvoiceDetailDialog
+            dialog = InvoiceDetailDialog(int(invoice_id), self)
+            dialog.exec()
+            
 
     def open_client_search(self):
         from ui.client_search_dialog import ClientSearchDialog
@@ -957,7 +1051,21 @@ class MainWindow(QMainWindow):
             if product:
                 self.add_product_to_grid(product)
             
+    def _require_supervisor_role(self, action_name="esta acción"):
+        role = self.current_user.get('role', 'CAJERO') if getattr(self, 'current_user', None) else 'CAJERO'
+        if role not in ('ADMIN', 'GERENTE'):
+            QMessageBox.warning(
+                self,
+                "Acceso Restringido (RBAC)",
+                f"El rol '{role}' no tiene permisos para ejecutar {action_name}.\n"
+                "Esta operación es exclusiva de Supervisión o Administración."
+            )
+            return False
+        return True
+
     def open_product_management(self):
+        if not self._require_supervisor_role("Gestión de Artículos"):
+            return
         from ui.product_management import ProductManagementDialog
         dialog = ProductManagementDialog(self)
         dialog.exec()
@@ -1089,21 +1197,7 @@ class MainWindow(QMainWindow):
         self.admin_window.show()
         self.admin_window.activateWindow()
 
-    def ver_detalle_factura(self, item=None):
-        row = self.table_historial.currentRow()
-        if row < 0 and item:
-            row = item.row()
-        if row >= 0:
-            item_nro = self.table_historial.item(row, 0)
-            if item_nro:
-                invoice_id = item_nro.data(Qt.ItemDataRole.UserRole)
-                if invoice_id:
-                    try:
-                        from ui.invoice_detail_dialog import InvoiceDetailDialog
-                        dlg = InvoiceDetailDialog(invoice_id, self)
-                        dlg.exec()
-                    except Exception as e:
-                        print(f"Error abriendo detalle de factura: {e}")
+
                 
     def buscar_producto(self):
         texto_busqueda = self.txt_codigo.text().strip()
@@ -1223,7 +1317,8 @@ class MainWindow(QMainWindow):
         if self.ventas_model.rowCount() == 0:
             self.lbl_vuelto.setText("0")
             
-        from database import format_stock_qty
+        from database import format_stock_qty, SessionLocal
+        import models
         stock_actual = _safe_dec(product.art_stkini or 0)
         
         # Check current qty already in cart to determine tier correctly
@@ -1233,9 +1328,44 @@ class MainWindow(QMainWindow):
                 qty_en_carrito = item['cantidad']
                 break
         qty_total = qty_en_carrito + _safe_dec(cantidad)
+
+        # Verificar si es un Combo/Kit con explosión de componentes
+        db = SessionLocal()
+        try:
+            componentes = db.query(models.ProductComponent).filter_by(parent_product_id=product.id).all()
+            faltantes_combo = []
+            if componentes:
+                for comp in componentes:
+                    ins = db.query(models.Product).filter_by(art_codigo=comp.component_art_codigo).first()
+                    if ins:
+                        req_qty = _safe_dec(comp.cantidad) * qty_total
+                        disp_qty = _safe_dec(ins.art_stkini or 0)
+                        if disp_qty <= Decimal('0') or req_qty > disp_qty:
+                            faltantes_combo.append(
+                                f"• {ins.art_descri} (Req: {format_stock_qty(req_qty)} | Disp: {format_stock_qty(disp_qty)})"
+                            )
+        finally:
+            db.close()
         
-        # Frase de advertencia por stock negativo o insuficiente
-        if stock_actual <= Decimal('0') or qty_total > stock_actual:
+        # Frase de advertencia por stock negativo o insuficiente (en ítem simple o en insumos de Combo)
+        if componentes:
+            if faltantes_combo:
+                from PyQt6.QtWidgets import QMessageBox
+                frase_adv = (
+                    f"El Combo/Kit '{product.art_descri}' tiene insumos con stock insuficiente:\n"
+                    + "\n".join(faltantes_combo)
+                )
+                resp = QMessageBox.warning(
+                    self,
+                    "⚠️ Advertencia de Stock en Combo/Kit",
+                    f"{frase_adv}\n\n¿Desea autorizar la venta del combo de todas formas?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                if resp != QMessageBox.StandardButton.Yes:
+                    self.statusBar().showMessage("❌ Venta de combo no autorizada por falta de insumos.", 7000)
+                    return
+        elif stock_actual <= Decimal('0') or qty_total > stock_actual:
             from PyQt6.QtWidgets import QMessageBox
             if stock_actual <= Decimal('0'):
                 frase_adv = f"El producto '{product.art_descri}' (Cód: {product.art_codigo}) se encuentra con STOCK NEGATIVO O AGOTADO ({format_stock_qty(stock_actual)})."
@@ -1568,12 +1698,16 @@ class MainWindow(QMainWindow):
             )
             
     def open_cotizacion_dialog(self):
+        if not self._require_supervisor_role("Cotización de Moneda"):
+            return
         from ui.cotizacion_dialog import CotizacionDialog
         from config_manager import ConfigManager
         dialog = CotizacionDialog(self)
         dialog.exec()
         
     def open_company_settings(self):
+        if not self._require_supervisor_role("Configuración de Empresa"):
+            return
         from ui.company_settings_dialog import CompanySettingsDialog
         dialog = CompanySettingsDialog(self)
         dialog.exec()
@@ -1581,27 +1715,33 @@ class MainWindow(QMainWindow):
     def create_menu_bar(self):
         menubar = self.menuBar()
         menu_util = menubar.addMenu("Utilidades")
+        is_supervisor = self.current_user.get('role') in ('ADMIN', 'GERENTE') if getattr(self, 'current_user', None) else False
         
         action_cotiz = QAction("5. Cotización de Moneda", self)
         action_cotiz.triggered.connect(self.open_cotizacion_dialog)
+        action_cotiz.setEnabled(is_supervisor)
         menu_util.addAction(action_cotiz)
         
         action_conf = QAction("Configuración de Empresa", self)
         action_conf.triggered.connect(self.open_company_settings)
+        action_conf.setEnabled(is_supervisor)
         menu_util.addAction(action_conf)
         
         menu_util.addSeparator()
         
         action_compras = QAction("🛒 Ingreso de Compras (Stock)", self)
         action_compras.triggered.connect(self.open_purchase_dialog)
+        action_compras.setEnabled(is_supervisor)
         menu_util.addAction(action_compras)
 
         action_promos = QAction("🏷️ Gestión de Promociones", self)
         action_promos.triggered.connect(self.open_promos_dialog)
+        action_promos.setEnabled(is_supervisor)
         menu_util.addAction(action_promos)
 
         action_tiers = QAction("💰 Precios por Volumen", self)
         action_tiers.triggered.connect(self.open_price_tiers_dialog)
+        action_tiers.setEnabled(is_supervisor)
         menu_util.addAction(action_tiers)
 
         menu_util.addSeparator()
@@ -1616,21 +1756,29 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def open_purchase_dialog(self):
+        if not self._require_supervisor_role("Ingreso de Compras"):
+            return
         from ui.purchase_dialog import PurchaseDialog
         dialog = PurchaseDialog(self)
         dialog.exec()
 
     def open_promos_dialog(self):
+        if not self._require_supervisor_role("Gestión de Promociones"):
+            return
         from ui.promos_dialog import PromosDialog
         dialog = PromosDialog(self)
         dialog.exec()
 
     def open_price_tiers_dialog(self):
+        if not self._require_supervisor_role("Precios por Volumen"):
+            return
         from ui.price_tiers_dialog import PriceTiersDialog
         dialog = PriceTiersDialog(self)
         dialog.exec()
         
     def open_price_lists_dialog(self):
+        if not self._require_supervisor_role("Listas de Precios"):
+            return
         from ui.price_lists_dialog import PriceListsDialog
         dialog = PriceListsDialog(self)
         dialog.exec()

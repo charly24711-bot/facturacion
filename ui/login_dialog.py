@@ -15,7 +15,7 @@ class LoginDialog(QDialog):
     - ROL 'ADMIN'/'GERENTE': Acceso a Panel Administrativo o POS.
     - ROL 'CAJERO': Acceso directo y exclusivo a POS.
     """
-    def __init__(self, parent=None, auto_login=True, default_module='ADMIN'):
+    def __init__(self, parent=None, auto_login=False, default_module='ADMIN'):
         super().__init__(parent)
         self.setWindowTitle("Acceso al Sistema - TRIFRONTERA STOCK")
         self.setFixedSize(440, 480)
@@ -63,7 +63,7 @@ class LoginDialog(QDialog):
         
         lbl_user = QLabel("Usuario:")
         lbl_user.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        self.txt_user = QLineEdit("admin")
+        self.txt_user = QLineEdit("")
         self.txt_user.setPlaceholderText("Nombre de usuario")
         self.txt_user.setFont(QFont("Arial", 11))
         self.txt_user.setStyleSheet("""
@@ -81,7 +81,7 @@ class LoginDialog(QDialog):
         
         lbl_pass = QLabel("Contraseña / PIN:")
         lbl_pass.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        self.txt_pass = QLineEdit("admin")
+        self.txt_pass = QLineEdit("")
         self.txt_pass.setEchoMode(QLineEdit.EchoMode.Password)
         self.txt_pass.setPlaceholderText("Contraseña o PIN de caja")
         self.txt_pass.setFont(QFont("Arial", 11))

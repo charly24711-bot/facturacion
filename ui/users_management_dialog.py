@@ -255,6 +255,9 @@ class UsersManagementDialog(QDialog):
         self.txt_username.setFocus()
 
     def guardar_usuario(self):
+        if self.current_user.get('role') != 'ADMIN':
+            QMessageBox.warning(self, "Acceso Restringido", "Solo administradores pueden crear o modificar usuarios.")
+            return
         username = self.txt_username.text().strip()
         full_name = self.txt_fullname.text().strip()
         pwd = self.txt_password.text()
@@ -346,6 +349,9 @@ class UsersManagementDialog(QDialog):
         self.load_users(filtro=self.txt_buscar.text())
 
     def resetear_password(self):
+        if self.current_user.get('role') != 'ADMIN':
+            QMessageBox.warning(self, "Acceso Restringido", "Solo administradores pueden resetear contraseñas.")
+            return
         if not self.selected_user_id:
             return
         resp = QMessageBox.question(self, "Confirmar Reset",

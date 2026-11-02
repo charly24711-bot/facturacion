@@ -269,3 +269,56 @@ def test_decimal_boundary(db_session):
     db_session.refresh(prod)
     assert prod.art_stkini == Decimal('96.667')
     window.close()
+
+def test_explosion_combos_y_kits(db_session):
+    """
+    Al vender 2 unidades de un Combo (ej. Combo Asado = 1 Carbón + 3 Cervezas),
+    NO debe descontarse el stock del artículo Combo fantasma, sino rebajar
+    exactamente 2 Carbones y 6 Cervezas de sus stocks y lotes FEFO, dejando Kardex.
+    """
+    ins1 = reset_product_stock(db_session, "INS001", Decimal('20'), [("LOTE-CARB-1", 20, 60)])
+    ins2 = reset_product_stock(db_session, "INS002", Decimal('50'), [("LOTE-CERV-1", 4, 15), ("LOTE-CERV-2", 46, 90)])
+    combo = reset_product_stock(db_session, "CMB001", Decimal('0'), [])
+    combo.art_preven = Decimal('45000')
+    db_session.commit()
+
+    db_session.query(models.ProductComponent).filter_by(parent_product_id=combo.id).delete()
+    db_session.add_all([
+        models.ProductComponent(parent_product_id=combo.id, component_art_codigo="INS001", cantidad=Decimal('1')),
+        models.ProductComponent(parent_product_id=combo.id, component_art_codigo="INS002", cantidad=Decimal('3')),
+    ])
+    db_session.commit()
+
+    window = MainWindow()
+    window.session_id = 1
+    window.ventas_model.add_item(combo, cantidad=Decimal('2'))
+    window.calcular_totales()
+
+    window.guardar_venta_db([{
+        'metodo': 'Efectivo',
+        'moneda': 'PYG',
+        'monto_origen': Decimal('90000'),
+        'monto_pyg': Decimal('90000')
+    }])
+
+    db_session.refresh(combo)
+    db_session.refresh(ins1)
+    db_session.refresh(ins2)
+
+    # El combo en sí no maneja existencia física fantasma (sigue en 0)
+    assert combo.art_stkini == Decimal('0')
+    # Insumo 1: 20 - (2 * 1) = 18
+    assert ins1.art_stkini == Decimal('18')
+    # Insumo 2: 50 - (2 * 3) = 44
+    assert ins2.art_stkini == Decimal('44')
+
+    # Validar FEFO en lotes del Insumo 2 (tenía 4 en lote 1 y 46 en lote 2; se descontaron 6)
+    lote_c1 = db_session.query(models.ProductBatch).filter_by(product_id=ins2.id, lote="LOTE-CERV-1").first()
+    lote_c2 = db_session.query(models.ProductBatch).filter_by(product_id=ins2.id, lote="LOTE-CERV-2").first()
+    assert lote_c1.stock_actual == Decimal('0')
+    assert lote_c2.stock_actual == Decimal('44')
+
+    # Validar Kardex (InventoryMovement) con tipo VENTA_COMBO
+    movs = db_session.query(models.InventoryMovement).filter_by(tipo_movimiento='VENTA_COMBO').all()
+    assert len(movs) >= 2
+    window.close()

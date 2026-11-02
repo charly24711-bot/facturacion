@@ -257,7 +257,10 @@ class HechaukaExportDialog(QDialog):
             tot_ex = Decimal('0')
 
             for row_idx, fac in enumerate(facturas):
-                total = _d(fac.ven_total)
+                # Si es Nota de Crédito (NC), resta del débito fiscal y total
+                es_nc = getattr(fac, 'ven_tipo', 'FA') == 'NC'
+                signo = Decimal('-1') if es_nc else Decimal('1')
+                total = (_d(fac.ven_total) * signo).quantize(Decimal('1'))
                 cli = fac.client
                 ruc  = (cli.cli_ruc  or '44444401-7') if cli else '44444401-7'
                 razon = (cli.cli_nombre or 'CONSUMIDOR FINAL') if cli else 'CONSUMIDOR FINAL'
@@ -268,15 +271,18 @@ class HechaukaExportDialog(QDialog):
                 ex  = Decimal('0')
 
                 for it in fac.items:
-                    sub = (_d(it.vit_precio) * _d(it.vit_canti)).quantize(Decimal('1'))
-                    # Buscar impuesto del producto
+                    sub = (_d(it.vit_precio) * _d(it.vit_canti)).quantize(Decimal('1')) * signo
                     prod = it.product
                     impu = _d(prod.art_impu) if prod else Decimal('10')
                     if impu == Decimal('10'):
-                        gv, iv = _iva_10(sub)
+                        gv, iv = _iva_10(abs(sub))
+                        if sub < 0:
+                            gv = -gv; iv = -iv
                         g10 += gv; i10 += iv
                     elif impu == Decimal('5'):
-                        gv, iv = _iva_5(sub)
+                        gv, iv = _iva_5(abs(sub))
+                        if sub < 0:
+                            gv = -gv; iv = -iv
                         g5 += gv; i5 += iv
                     else:
                         ex += sub
@@ -285,9 +291,10 @@ class HechaukaExportDialog(QDialog):
                 tot_5  += g5;  tot_iva5  += i5
                 tot_ex += ex
 
+                nro_comprobante = f"NC-{fac.ven_numero}" if es_nc else str(fac.ven_numero)
                 row_data = [
-                    fac.ven_fecha.strftime("%d/%m/%Y"),
-                    str(fac.ven_numero),
+                    fac.ven_fecha.strftime("%d/%m/%Y") if fac.ven_fecha else "-",
+                    nro_comprobante,
                     ruc, razon,
                     str(int(total)),
                     str(int(g10)), str(int(i10)),
@@ -344,11 +351,29 @@ class HechaukaExportDialog(QDialog):
                 sup = c.supplier
                 ruc_sup  = (sup.sup_ruc   or '—') if sup else '—'
                 nom_sup  = (sup.sup_nombre or '—') if sup else '—'
-                g10, i10 = _iva_10(total)
+                
+                # Desglose real de ítems de compra si existen
+                g10 = Decimal('0'); i10 = Decimal('0')
+                if getattr(c, 'items', None):
+                    for it in c.items:
+                        sub = (_d(it.cit_precio) * _d(it.cit_canti)).quantize(Decimal('1'))
+                        prod = getattr(it, 'product', None)
+                        impu = _d(prod.art_impu) if prod else Decimal('10')
+                        if impu == Decimal('10'):
+                            gv, iv = _iva_10(sub)
+                            g10 += gv; i10 += iv
+                        elif impu == Decimal('5'):
+                            gv, iv = _iva_5(sub)
+                            g10 += gv; i10 += iv
+                        else:
+                            g10 += sub
+                else:
+                    g10, i10 = _iva_10(total)
+
                 tot_compras += total
 
                 row_data = [
-                    c.com_fecha.strftime("%d/%m/%Y"),
+                    c.com_fecha.strftime("%d/%m/%Y") if c.com_fecha else "-",
                     c.com_nrofac or '',
                     c.com_timbra or '',
                     ruc_sup, nom_sup,

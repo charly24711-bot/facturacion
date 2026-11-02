@@ -164,6 +164,11 @@ def check_and_migrate_db():
             existing_cols = {row[1] for row in res}
             new_cols = {
                 "timbrado": "VARCHAR(20) DEFAULT '12345678'",
+                "ui_show_multicurrency": "BOOLEAN DEFAULT 1",
+                "ui_show_price_channels": "BOOLEAN DEFAULT 1",
+                "mod_inventory_fifo": "BOOLEAN DEFAULT 1",
+                "mod_budgets": "BOOLEAN DEFAULT 1",
+                "pos_strict_cash": "BOOLEAN DEFAULT 1",
                 "printer_type": "VARCHAR(20) DEFAULT 'SIMULATOR'",
                 "printer_ip": "VARCHAR(50) DEFAULT '192.168.1.200'",
                 "printer_port": "INTEGER DEFAULT 9100",
@@ -190,6 +195,23 @@ def check_and_migrate_db():
             for col_name, col_type in outbox_new_cols.items():
                 if col_name not in existing_outbox_cols:
                     conn.execute(text(f"ALTER TABLE sync_outbox ADD COLUMN {col_name} {col_type};"))
+                    conn.commit()
+
+            # 3. Payments
+            res_pay = conn.execute(text("PRAGMA table_info(payments);")).fetchall()
+            existing_pay_cols = {row[1] for row in res_pay}
+            pay_new_cols = {
+                "auth_code": "VARCHAR(64) DEFAULT NULL",
+                "voucher_nro": "VARCHAR(64) DEFAULT NULL",
+                "card_brand": "VARCHAR(32) DEFAULT NULL",
+                "terminal_id": "VARCHAR(32) DEFAULT NULL",
+                "uuid": "VARCHAR(36) DEFAULT NULL",
+                "synced": "BOOLEAN DEFAULT 0",
+                "synced_at": "DATETIME DEFAULT NULL"
+            }
+            for col_name, col_type in pay_new_cols.items():
+                if col_name not in existing_pay_cols:
+                    conn.execute(text(f"ALTER TABLE payments ADD COLUMN {col_name} {col_type};"))
                     conn.commit()
     except Exception:
         pass

@@ -7,15 +7,26 @@ import uuid
 import json
 import hashlib
 
+import secrets
+
+APP_SALT = "pos_triple_frontera_salt_v1"
+
 def hash_password(password: str) -> str:
-    """Genera hash SHA-256 seguro para contraseñas."""
+    """Genera hash SHA-256 seguro con salt de aplicación."""
     if not password:
         return ""
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+    return hashlib.sha256(f"{APP_SALT}:{password}".encode('utf-8')).hexdigest()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifica si una contraseña en texto plano coincide con el hash SHA-256."""
-    return hash_password(plain_password) == hashed_password
+    """Verifica si una contraseña en texto plano coincide con el hash (soporta salt y legacy)."""
+    if not plain_password or not hashed_password:
+        return False
+    salted_hash = hash_password(plain_password)
+    if secrets.compare_digest(salted_hash, hashed_password):
+        return True
+    # Soporte legacy para registros existentes sin salt
+    legacy_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
+    return secrets.compare_digest(legacy_hash, hashed_password)
 
 class SyncableModel:
     @declared_attr
@@ -42,13 +53,12 @@ class SyncOutbox(Base):
     entity_uuid = Column(String(36), nullable=False, index=True)
     action = Column(String(10), nullable=False) # INSERT, UPDATE, DELETE
     payload_json = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now)
     synced = Column(Boolean, default=False, index=True)
     synced_at = Column(DateTime, nullable=True)
     retry_count = Column(Integer, default=0)
     last_error = Column(String(255), nullable=True)
     status = Column(String(20), default='PENDING', index=True) # PENDING, SYNCING, SYNCED, FAILED
-
 
 
 class Currency(Base):
@@ -66,7 +76,7 @@ class CurrencyRate(Base):
     currency_code = Column(String(3), ForeignKey('currencies.code'))
     buy_rate = Column(Numeric(asdecimal=True), nullable=False)
     sell_rate = Column(Numeric(asdecimal=True), nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now)
     is_active = Column(Boolean, default=True)
 
 class Category(Base):
@@ -106,6 +116,23 @@ class Product(Base):
     brand = relationship("Brand")
     barcodes = relationship("ProductBarcode", back_populates="product", cascade="all, delete-orphan")
     batches = relationship("ProductBatch", back_populates="product", cascade="all, delete-orphan")
+    components = relationship(
+        "ProductComponent",
+        foreign_keys="ProductComponent.parent_product_id",
+        back_populates="parent_product",
+        cascade="all, delete-orphan"
+    )
+
+class ProductComponent(Base):
+    """Receta / Explosión de Insumos para Combos y Kits armados."""
+    __tablename__ = 'product_components'
+    id = Column(Integer, primary_key=True, index=True)
+    parent_product_id = Column(Integer, ForeignKey('products.id'), index=True, nullable=False)
+    component_art_codigo = Column(String(6), ForeignKey('products.art_codigo'), index=True, nullable=False)
+    cantidad = Column(Numeric(asdecimal=True, precision=12, scale=3), nullable=False, default=Decimal('1'))
+
+    parent_product = relationship("Product", foreign_keys=[parent_product_id], back_populates="components")
+    component_product = relationship("Product", foreign_keys=[component_art_codigo])
 
 class ProductBarcode(Base):
     """Códigos de barra alternativos (Packs, Cajas)"""
@@ -148,7 +175,7 @@ class CustomerTransaction(SyncableModel, Base):
     __tablename__ = 'customer_transactions'
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=False)
-    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    fecha = Column(DateTime, default=datetime.datetime.now)
     tipo = Column(String(10), nullable=False) # CHARGE (deuda por compra), PAYMENT (pago/recibo)
     monto = Column(Numeric(asdecimal=True), nullable=False)
     referencia = Column(String(100)) # Nro de Factura o Recibo
@@ -170,7 +197,7 @@ class Invoice(SyncableModel, Base):
     id = Column(Integer, primary_key=True, index=True)
     ven_tipo = Column(String(2), default='FA') # FA=Factura, NC=Nota de Credito
     ven_numero = Column(Integer, unique=True, index=True) # VEN_NUMERO
-    ven_fecha = Column(DateTime, default=datetime.datetime.utcnow) # VEN_FECHA
+    ven_fecha = Column(DateTime, default=datetime.datetime.now) # VEN_FECHA
     ven_codcli = Column(String(6), ForeignKey('clients.cli_codigo')) # VEN_CODCLI
     ven_total = Column(Numeric(asdecimal=True), default=0.0) # VEN_TOTAL
     ven_codmnd = Column(String(2)) # VEN_CODMND
@@ -204,7 +231,7 @@ class Payment(SyncableModel, Base):
     __tablename__ = 'payments'
     id = Column(Integer, primary_key=True, index=True)
     cob_numero = Column(Integer, unique=True, index=True) # COB_NUMERO
-    cob_fecha = Column(DateTime, default=datetime.datetime.utcnow) # COB_FECHA
+    cob_fecha = Column(DateTime, default=datetime.datetime.now) # COB_FECHA
     cob_monto = Column(Numeric(asdecimal=True), nullable=False) # COB_MONTO
     cob_vennro = Column(Integer, ForeignKey('invoices.ven_numero')) # COB_VENNRO
     cob_mndori = Column(String(3)) # COB_MNDORI (USD, BRL, ARS, PYG)
@@ -231,7 +258,7 @@ class User(SyncableModel, Base):
     full_name = Column(String(100), nullable=False)
     role = Column(String(20), default='CAJERO')  # 'ADMIN', 'GERENTE', 'CAJERO'
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now)
 
     sessions = relationship("CashSession", back_populates="user")
 
@@ -239,7 +266,7 @@ class User(SyncableModel, Base):
 class CashSession(SyncableModel, Base):
     __tablename__ = 'cash_sessions'
     id = Column(Integer, primary_key=True, index=True)
-    opened_at = Column(DateTime, default=datetime.datetime.utcnow)
+    opened_at = Column(DateTime, default=datetime.datetime.now)
     closed_at = Column(DateTime, nullable=True)
     status = Column(String(10), default='OPEN') # OPEN, CLOSED
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True, default=1)
@@ -270,7 +297,7 @@ class CashMovement(SyncableModel, Base):
     monto = Column(Numeric(asdecimal=True), nullable=False)
     moneda = Column(String(3), default='PYG') # PYG, USD, BRL, ARS
     concepto = Column(String(150), nullable=False)
-    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    fecha = Column(DateTime, default=datetime.datetime.now)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     
     session = relationship("CashSession", back_populates="movements")
@@ -285,7 +312,7 @@ class StockAdjustment(SyncableModel, Base):
     """
     __tablename__ = 'stock_adjustments'
     id = Column(Integer, primary_key=True, index=True)
-    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    fecha = Column(DateTime, default=datetime.datetime.now)
     art_codigo = Column(String(6), ForeignKey('products.art_codigo'), nullable=False)
     tipo = Column(String(25), nullable=False)
     # MERMA | DONACION | DEVOLUCION_PROVEEDOR | AJUSTE_POSITIVO | AJUSTE_NEGATIVO
@@ -296,6 +323,30 @@ class StockAdjustment(SyncableModel, Base):
     # monto_perdida = cantidad * costo_unitario (siempre Decimal, nunca float)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     
+    product = relationship("Product")
+    user = relationship("User")
+
+
+class InventoryMovement(SyncableModel, Base):
+    """
+    Log inmutable de auditoría de inventario (Kardex).
+    Registra cada cambio en el saldo de un artículo:
+    fecha, hora, usuario, número de comprobante, terminal/caja y tipo de movimiento
+    (VENTA, COMPRA, AJUSTE, NOTA_CREDITO, STOCK_INICIAL, ALERTA_NEGATIVO).
+    """
+    __tablename__ = 'inventory_movements'
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(DateTime, default=datetime.datetime.now, index=True, nullable=False)
+    art_codigo = Column(String(6), ForeignKey('products.art_codigo'), index=True, nullable=False)
+    tipo_movimiento = Column(String(30), nullable=False)
+    cantidad = Column(Numeric(asdecimal=True, precision=12, scale=3), nullable=False)
+    stock_anterior = Column(Numeric(asdecimal=True, precision=12, scale=3), default=Decimal('0'))
+    stock_resultante = Column(Numeric(asdecimal=True, precision=12, scale=3), default=Decimal('0'))
+    comprobante = Column(String(60), nullable=True)
+    terminal_id = Column(String(30), default='CAJA-01')
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    observacion = Column(String(200), nullable=True)
+
     product = relationship("Product")
     user = relationship("User")
 
@@ -314,7 +365,7 @@ class Supplier(SyncableModel, Base):
 class Purchase(SyncableModel, Base):
     __tablename__ = 'purchases'
     id = Column(Integer, primary_key=True, index=True)
-    com_fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    com_fecha = Column(DateTime, default=datetime.datetime.now)
     com_provee = Column(Integer, ForeignKey('suppliers.id'))
     com_nrofac = Column(String(50))
     com_timbra = Column(String(50))
@@ -408,7 +459,7 @@ class Remission(SyncableModel, Base):
     """Nota de Remisión (F7)"""
     __tablename__ = 'remissions'
     id = Column(Integer, primary_key=True, index=True)
-    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    fecha = Column(DateTime, default=datetime.datetime.now)
     codcli = Column(String(6), ForeignKey('clients.cli_codigo'))
     total_pyg = Column(Numeric(asdecimal=True), default=0.0)
     estado = Column(String(1), default='A') # A=Activo, N=Anulado
@@ -432,7 +483,7 @@ class Budget(SyncableModel, Base):
     __tablename__ = 'budgets'
     id = Column(Integer, primary_key=True, index=True)
     numero = Column(String(20), index=True) # PRES-000001
-    fecha = Column(DateTime, default=datetime.datetime.utcnow)
+    fecha = Column(DateTime, default=datetime.datetime.now)
     validez_dias = Column(Integer, default=15)
     codcli = Column(String(6), ForeignKey('clients.cli_codigo'), nullable=True)
     cliente_nombre = Column(String(100), default="CONSUMIDOR FINAL")
@@ -493,7 +544,7 @@ def queue_sync_event(mapper, connection, target, action):
             "entity_uuid": target.uuid,
             "action": action,
             "payload_json": json.dumps(payload),
-            "created_at": datetime.datetime.utcnow(),
+            "created_at": datetime.datetime.now(),
             "synced": False
         }
     )
@@ -536,12 +587,15 @@ def receive_after_update_cash(mapper, connection, target):
 @event.listens_for(Supplier, 'after_insert')
 @event.listens_for(Purchase, 'after_insert')
 @event.listens_for(PurchaseItem, 'after_insert')
+@event.listens_for(StockAdjustment, 'after_insert')
+@event.listens_for(InventoryMovement, 'after_insert')
 def receive_after_insert_purchases(mapper, connection, target):
     queue_sync_event(mapper, connection, target, 'INSERT')
 
 @event.listens_for(Supplier, 'after_update')
 @event.listens_for(Purchase, 'after_update')
 @event.listens_for(PurchaseItem, 'after_update')
+@event.listens_for(StockAdjustment, 'after_update')
 def receive_after_update_purchases(mapper, connection, target):
     queue_sync_event(mapper, connection, target, 'UPDATE')
 

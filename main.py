@@ -77,31 +77,37 @@ def main():
     database.init_users()
     
     from ui.login_dialog import LoginDialog
-    from PyQt6.QtWidgets import QDialog
 
     # Cerrar splash screen antes de mostrar el login
     if splash:
         splash.close()
 
-    # Determinar módulo por defecto (si se usó acceso directo específico --pos)
-    default_mod = 'POS' if "--pos" in sys.argv else 'ADMIN'
-    
-    # Abrir diálogo de Login unificado
-    login = LoginDialog(auto_login=False, default_module=default_mod)
-    if login.exec() == QDialog.DialogCode.Accepted:
-        active_user = login.authenticated_user
-        target = login.target_module
-        
-        # Iniciar la interfaz correspondiente
-        if target == 'POS':
-            window = MainWindow(current_user=active_user)
-        else:
-            window = AdminWindow(current_user=active_user)
-            
-        window.show()
-        sys.exit(app.exec())
+    # Modo desarrollo rapido explicito via flag --dev o --auto-login
+    if "--dev" in sys.argv or "--auto-login" in sys.argv:
+        active_user = {
+            "id": 1,
+            "username": "admin",
+            "full_name": "Administrador General",
+            "role": "ADMIN"
+        }
+        target = 'POS' if "--pos" in sys.argv else 'ADMIN'
     else:
-        # El usuario canceló el inicio de sesión
-        sys.exit(0)
+        default_mod = 'POS' if "--pos" in sys.argv else 'ADMIN'
+        login = LoginDialog(auto_login=False, default_module=default_mod)
+        if login.exec():
+            active_user = login.authenticated_user
+            target = login.target_module
+        else:
+            sys.exit(0)
+
+    # Iniciar la interfaz correspondiente
+    if target == 'POS' or active_user.get('role') == 'CAJERO':
+        window = MainWindow(current_user=active_user)
+    else:
+        window = AdminWindow(current_user=active_user)
+        
+    window.show()
+    sys.exit(app.exec())
+
 if __name__ == "__main__":
     main()

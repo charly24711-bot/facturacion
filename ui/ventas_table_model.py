@@ -69,6 +69,8 @@ class VentasTableModel(QAbstractTableModel):
             if col == 4:
                 try:
                     nueva_cantidad = Decimal(str(value))
+                    if nueva_cantidad <= Decimal('0'):
+                        return False
                     self.items[row]['cantidad'] = nueva_cantidad
                     self.qty_changed_for_tier.emit(row, nueva_cantidad)
                     self._recalcular_fila(row)

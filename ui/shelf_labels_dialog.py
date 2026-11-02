@@ -44,8 +44,8 @@ class ShelfLabelsDialog(QDialog):
             rate_row = db.query(models.CurrencyRate).filter(
                 models.CurrencyRate.currency_code == "USD"
             ).order_by(models.CurrencyRate.id.desc()).first()
-            if rate_row and rate_row.rate_to_base:
-                self.usd_rate = Decimal(str(rate_row.rate_to_base))
+            if rate_row and (rate_row.sell_rate or rate_row.buy_rate):
+                self.usd_rate = Decimal(str(rate_row.sell_rate or rate_row.buy_rate))
         except Exception as e:
             print(f"Aviso: Usando cotización USD por defecto: {e}")
             self.usd_rate = Decimal("7500")
@@ -236,7 +236,7 @@ class ShelfLabelsDialog(QDialog):
                     "art_descri": str(p.art_descri or ""),
                     "art_codbar": str(p.art_cbarra or p.art_codigo or ""),
                     "art_preven": Decimal(str(p.art_preven or "0")),
-                    "art_stkact": Decimal(str(p.stock_actual or "0")),
+                    "art_stkact": Decimal(str(p.stock_actual or p.art_stkini or "0")),
                 })
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error cargando catálogo: {e}")

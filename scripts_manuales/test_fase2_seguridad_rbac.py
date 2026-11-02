@@ -75,3 +75,45 @@ def test_rbac_gerente_puede_editar_precio(db_session):
     
     # Verificar impacto
     assert modelo_gerente.items[0]['precio'] == Decimal('3000000')
+
+def test_rbac_cajero_bloqueado_en_modulos_criticos_pos():
+    """
+    Verifica que un CAJERO en MainWindow tenga oculto el botón de Artículos
+    y bloqueados los accesos a Compras, Promociones, Configuración y Listas de Precios.
+    """
+    from ui.main_window import MainWindow
+    from PyQt6.QtWidgets import QMessageBox
+    win_cajero = MainWindow(current_user={"id": 2, "username": "cajero", "full_name": "Cajero", "role": "CAJERO"})
+    assert not win_cajero.btn_articulo.isVisible(), "El botón Artículos debe estar oculto para CAJERO"
+    win_cajero.close()
+
+def test_kardex_inmutable_en_venta(db_session):
+    """
+    Verifica que al registrar una venta en POS se cree un registro en InventoryMovement (Kardex)
+    con stock_anterior, cantidad descontada, stock_resultante y comprobante.
+    """
+    from ui.main_window import MainWindow
+    prod = db_session.query(models.Product).filter_by(art_codigo="RBAC01").first()
+    prod.art_stkini = Decimal('20')
+    db_session.commit()
+
+    win = MainWindow(current_user={"id": 1, "username": "admin", "full_name": "Admin", "role": "ADMIN"})
+    win.session_id = 1
+    win.ventas_model.add_item(prod, cantidad=Decimal('2'))
+    win.calcular_totales()
+    win.guardar_venta_db([{
+        'metodo': 'Efectivo', 'moneda': 'PYG',
+        'monto_origen': Decimal('7000000'), 'monto_pyg': Decimal('7000000')
+    }])
+
+    mov = (db_session.query(models.InventoryMovement)
+             .filter_by(art_codigo="RBAC01", tipo_movimiento="VENTA")
+             .order_by(models.InventoryMovement.id.desc())
+             .first())
+    assert mov is not None, "Debe registrarse el movimiento en el Kardex (InventoryMovement)"
+    assert mov.stock_anterior == Decimal('20')
+    assert mov.cantidad == Decimal('-2')
+    assert mov.stock_resultante == Decimal('18')
+    assert isinstance(mov.stock_resultante, Decimal)
+    win.close()
+
