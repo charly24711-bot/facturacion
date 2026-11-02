@@ -33,6 +33,7 @@
 | **Fase 10: Sincronización Offline-First (SPEC-006)** | Motor Outbox, serializador JSON Decimal estricto, SyncWorker QThread con Backoff Exponencial y widget UI. | ✅ Completada | `utils/sync_engine.py`, `ui/sync_status_widget.py`, `models.SyncOutbox` |
 | **Fase 11: Catálogo Táctil & Balanza RS232 (SPEC-007)** | Driver serial balanzas, Numpad táctil con presets, catálogo modal fullscreen y atajo F6. | ✅ Completada | `utils/scale_driver.py`, `ui/touch_catalog_dialog.py`, `ui/touch_numpad_dialog.py` |
 | **Fase 12: Back-Office Fiscal & SIFEN v150 (SPEC-008)** | Liquidación IVA (10%, 5%, Exentas), monitor KuDE, lote JSON SIFEN, libro CSV y reportes ApexCharts. | ✅ Completada | `utils/fiscal_engine.py`, `ui/backoffice_fiscal_dialog.py` |
+| **Fase 13: Blindaje de Seguridad, FEFO & Catálogo PY** | Blindaje financiero (Decimal estricto en pagos, vueltos cruzados y cuenta corriente), Kardex inmutable (`InventoryMovement`), combos/kits (`ProductComponent`), deducción FEFO, RBAC y PBKDF2/SHA-256 + APP_SALT, catálogo con 53 productos masivos y balanzas de Paraguay, migración SQLite y push a GitHub (`19d0b07`). | ✅ Completada | `models.py`, `database.py`, `ui/main_window.py`, `ui/payment_dialog.py`, `seed_supermercado_py.py` |
 
 ---
 
